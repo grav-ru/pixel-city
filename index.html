@@ -1,0 +1,2960 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <!-- PWA Support -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#6bffb8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('sw.js').then(reg => {
+            console.log('PWA ready!');
+          }).catch(err => console.log('SW fail:', err));
+        });
+      }
+    </script>
+    <!-- End PWA Support -->
+
+<meta charset="UTF-8">
+<title>Пиксель — 3D город: Охота</title>
+<style>
+    * { box-sizing: border-box; }
+    html, body {
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        position: fixed;
+        margin: 0; padding: 0;
+        width: 100%; height: 100%;
+        overflow: hidden;
+        background: #05070d;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #game { display: block; width: 100vw; height: 100vh; }
+
+    .hud-panel {
+        position: fixed; top: 16px; right: 24px;
+        display: flex; flex-direction: column; gap: 8px;
+        z-index: 10; pointer-events: none;
+        align-items: flex-end;
+    }
+    .hud-row {
+        display: flex; align-items: center; gap: 10px;
+        background: rgba(5,10,15,0.5);
+        border: 1px solid rgba(107,255,184,0.2);
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+        color: rgba(107,255,184,0.75);
+        backdrop-filter: blur(4px);
+        min-width: 210px;
+    }
+    .hud-row b { color: #b6ffe0; font-weight: 600; margin-left: auto; }
+
+    .zoom-row {
+        display: flex; align-items: center; gap: 10px;
+        background: rgba(5,10,15,0.5);
+        border: 1px solid rgba(107,255,184,0.2);
+        border-radius: 8px;
+        padding: 6px 12px;
+        backdrop-filter: blur(4px);
+        min-width: 210px;
+        pointer-events: auto;
+    }
+    .zoom-row input[type=range] {
+        -webkit-appearance: none; appearance: none;
+        flex: 1 1 auto; min-width: 0;
+        height: 4px;
+        background: rgba(107,255,184,0.2); border-radius: 4px; outline: none;
+        margin: 0;
+    }
+    .zoom-row input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none; width: 14px; height: 14px;
+        background: #6bffb8; border-radius: 50%;
+        box-shadow: 0 0 10px #6bffb8, 0 0 20px rgba(107,255,184,0.5);
+        cursor: pointer;
+    }
+    .zoom-row input[type=range]::-moz-range-thumb {
+        width: 14px; height: 14px; background: #6bffb8; border-radius: 50%;
+        border: none; box-shadow: 0 0 10px #6bffb8, 0 0 20px rgba(107,255,184,0.5);
+        cursor: pointer;
+    }
+
+    .time-btn {
+        cursor: pointer;
+        padding: 4px 8px;
+        font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+        color: #6bffb8;
+        border: 1px solid rgba(107,255,184,0.3);
+        border-radius: 6px;
+        background: rgba(5,10,15,0.35);
+        backdrop-filter: blur(4px);
+        white-space: nowrap;
+        flex: 0 0 auto;
+    }
+    .time-btn:hover { background: rgba(107,255,184,0.12); }
+
+    .timer-panel {
+        position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+        z-index: 10; pointer-events: none;
+        display: flex; gap: 10px; align-items: center;
+    }
+    .timer-panel .time {
+        background: rgba(5,10,15,0.6);
+        border: 1px solid rgba(107,255,184,0.3);
+        border-radius: 8px;
+        padding: 8px 18px;
+        font-size: 18px; letter-spacing: 3px;
+        color: #b6ffe0;
+        text-shadow: 0 0 12px rgba(107,255,184,0.6);
+        font-variant-numeric: tabular-nums;
+        backdrop-filter: blur(4px);
+    }
+    .timer-panel .time.low {
+        color: #ff8a5a;
+        border-color: rgba(255,138,90,0.5);
+        text-shadow: 0 0 12px rgba(255,138,90,0.7);
+    }
+
+    #loading {
+        position: fixed; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        background: #05070d; color: #6bffb8;
+        font-size: 14px; letter-spacing: 6px; text-transform: uppercase;
+        z-index: 100; transition: opacity 0.5s;
+    }
+    #loading.hide { opacity: 0; pointer-events: none; }
+
+    #error {
+        position: fixed; inset: 0; display: none;
+        align-items: center; justify-content: center;
+        background: #1a0505; color: #ff8080;
+        font-family: monospace; font-size: 13px;
+        padding: 40px; white-space: pre-wrap; z-index: 200;
+    }
+
+    #minimap {
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        width: 160px;
+        height: 160px;
+        border: 1px solid rgba(107,255,184,0.3);
+        border-radius: 10px;
+        background: rgba(5,10,15,0.6);
+        backdrop-filter: blur(4px);
+        z-index: 10;
+        box-shadow: 0 0 16px rgba(0,0,0,0.4);
+        overflow: hidden;
+    }
+    #minimap canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+
+    .game-over {
+        position: fixed; inset: 0;
+        display: none; align-items: center; justify-content: center;
+        flex-direction: column; gap: 20px;
+        background: rgba(5,7,13,0.92);
+        z-index: 150; color: #b6ffe0;
+        text-align: center;
+    }
+    .game-over.show { display: flex; }
+    .game-over h1 {
+        font-size: 28px; letter-spacing: 8px; text-transform: uppercase;
+        margin: 0; text-shadow: 0 0 20px rgba(107,255,184,0.8);
+    }
+    .game-over p {
+        font-size: 14px; letter-spacing: 4px;
+        color: rgba(107,255,184,0.7); margin: 0;
+    }
+    .game-over button {
+        margin-top: 10px;
+        padding: 12px 32px;
+        font-size: 13px; letter-spacing: 4px; text-transform: uppercase;
+        color: #05070d;
+        background: #6bffb8;
+        border: none; border-radius: 8px;
+        cursor: pointer;
+        box-shadow: 0 0 20px rgba(107,255,184,0.5);
+    }
+    .game-over button:hover { background: #b6ffe0; }
+
+    .mobile-controls { display: none; }
+    body.mobile .mobile-controls { display: block; }
+
+    .dpad {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        width: 160px;
+        height: 160px;
+        border-radius: 50%;
+        background: rgba(5,10,15,0.35);
+        border: 1px solid rgba(107,255,184,0.25);
+        backdrop-filter: blur(6px);
+        z-index: 20;
+        touch-action: none;
+        user-select: none;
+    }
+    .dpad .dbtn {
+        position: absolute;
+        width: 46px; height: 46px;
+        border-radius: 50%;
+        background: rgba(107,255,184,0.12);
+        border: 1px solid rgba(107,255,184,0.35);
+        color: #b6ffe0;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 20px; line-height: 1;
+        user-select: none;
+        touch-action: none;
+        cursor: pointer;
+    }
+    .dpad .dbtn:active,
+    .dpad .dbtn.pressed {
+        background: rgba(107,255,184,0.3);
+    }
+    .dpad .dbtn.up    { top: 6px; left: 50%; transform: translateX(-50%); }
+    .dpad .dbtn.down  { bottom: 6px; left: 50%; transform: translateX(-50%); }
+    .dpad .dbtn.left  { left: 6px; top: 50%; transform: translateY(-50%); }
+    .dpad .dbtn.right { right: 6px; top: 50%; transform: translateY(-50%); }
+
+    .action-buttons {
+        position: fixed;
+        left: 20px;
+        bottom: 20px;
+        display: flex;
+        gap: 14px;
+        z-index: 20;
+        touch-action: none;
+        user-select: none;
+    }
+    .abtn {
+        width: 72px; height: 72px;
+        border-radius: 50%;
+        background: rgba(5,10,15,0.4);
+        border: 1px solid rgba(107,255,184,0.35);
+        color: #b6ffe0;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+        backdrop-filter: blur(6px);
+        user-select: none;
+        touch-action: none;
+        cursor: pointer;
+        font-weight: 600;
+    }
+    .abtn:active,
+    .abtn.pressed {
+        background: rgba(107,255,184,0.25);
+    }
+    .abtn.jump {
+        width: 80px; height: 80px;
+        align-self: flex-end;
+    }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+<div id="loading">Загрузка города...</div>
+<div id="error"></div>
+
+<div class="hud-panel">
+    <div class="zoom-row">
+        <input type="range" id="zoomSlider" min="0" max="100" value="50">
+        <button class="time-btn" id="timeBtn" type="button">День</button>
+    </div>
+    <div class="hud-row">Поймано <b id="catchCount">0 / 9</b></div>
+</div>
+
+<div class="timer-panel">
+    <div class="time" id="timerText">05:30</div>
+</div>
+
+<div id="minimap"><canvas id="minimapCanvas" width="160" height="160"></canvas></div>
+
+<div class="mobile-controls">
+    <div class="dpad">
+        <div class="dbtn up"    data-key="w">▲</div>
+        <div class="dbtn down"  data-key="s">▼</div>
+        <div class="dbtn left"  data-key="a">◀</div>
+        <div class="dbtn right" data-key="d">▶</div>
+    </div>
+    <div class="action-buttons">
+        <div class="abtn jump" data-key=" ">Прыжок</div>
+    </div>
+</div>
+
+<div class="game-over" id="gameOver">
+    <h1 id="gameOverTitle">Время вышло</h1>
+    <p id="gameOverText">Поймано: 0 из 9</p>
+    <button id="restartBtn" type="button">Играть снова</button>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+}
+</script>
+
+<script type="module">
+try {
+    const THREE = await import('three');
+
+// ============================================================
+// ==================== БЛОК 2: МИР / THREE ====================
+// ============================================================
+// Содержит: рендерер, сцену, свет, генерацию карты, дома, деревья,
+// фонари, разметку, звёзды, луну, время суток, модель игрока и NPC.
+// Здесь НЕТ логики поведения NPC — только визуал и данные мира.
+
+    const canvas = document.getElementById("game");
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x05070d, 1);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x05070d, 60, 280);
+
+    const camera = new THREE.PerspectiveCamera(
+        55, window.innerWidth / window.innerHeight, 0.1, 900
+    );
+
+    const sunLight = new THREE.DirectionalLight(0xc8ffe0, 1.1);
+    sunLight.position.set(-20, 45, -15);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 1024;
+    sunLight.shadow.mapSize.height = 1024;
+    sunLight.shadow.camera.left = -120;
+    sunLight.shadow.camera.right = 120;
+    sunLight.shadow.camera.top = 120;
+    sunLight.shadow.camera.bottom = -120;
+    sunLight.shadow.camera.near = 0.5;
+    sunLight.shadow.camera.far = 280;
+    sunLight.shadow.bias = -0.0008;
+    scene.add(sunLight);
+
+    const ambientLight = new THREE.AmbientLight(0x2a4a5a, 0.9);
+    scene.add(ambientLight);
+
+    const hemiLight = new THREE.HemisphereLight(0x3a5a6a, 0x0a1a12, 0.5);
+    scene.add(hemiLight);
+
+    const CITY_SIZE = 50;
+    const BLOCK = 6;
+    const ROAD_WIDTH = 3;
+    const CELL = BLOCK + ROAD_WIDTH;
+    const WORLD_EXTENT = CITY_SIZE * CELL;
+
+    // ==================== ГЕНЕРАЦИЯ КАРТЫ ====================
+    function generateAxis(CITY_SIZE) {
+        const axis = new Array(CITY_SIZE).fill(false);
+        let i = 0;
+        while (i < CITY_SIZE) {
+            axis[i] = true;
+            i++;
+            const blockLen = 1 + Math.floor(Math.random() * 3);
+            for (let k = 0; k < blockLen && i < CITY_SIZE; k++) {
+                axis[i] = false;
+                i++;
+            }
+        }
+        return axis;
+    }
+
+    const isRoadAxisX = generateAxis(CITY_SIZE);
+    const isRoadAxisY = generateAxis(CITY_SIZE);
+
+    const cityMap = [];
+    const houseCells = [];
+
+    for (let y = 0; y < CITY_SIZE; y++) {
+        const row = [];
+        for (let x = 0; x < CITY_SIZE; x++) {
+            if (isRoadAxisX[x] || isRoadAxisY[y]) {
+                row.push(0);
+            } else {
+                const r = Math.random();
+                if (r < 0.5) {
+                    row.push(1);
+                    houseCells.push({ cx: x, cy: y });
+                }
+                else if (r < 0.8) row.push(2);
+                else if (r < 0.92) row.push(4);
+                else row.push(3);
+            }
+        }
+        cityMap.push(row);
+    }
+
+    function worldFromCell(cx, cy) {
+        return {
+            x: (cx - CITY_SIZE / 2 + 0.5) * CELL,
+            z: (cy - CITY_SIZE / 2 + 0.5) * CELL
+        };
+    }
+
+    function cellFromWorld(wx, wz) {
+        return {
+            cx: Math.floor(wx / CELL + CITY_SIZE / 2),
+            cy: Math.floor(wz / CELL + CITY_SIZE / 2)
+        };
+    }
+
+    function isRoadCell(cx, cy) {
+        if (cx < 0 || cx >= CITY_SIZE || cy < 0 || cy >= CITY_SIZE) return false;
+        return cityMap[cy][cx] === 0;
+    }
+
+    function getFrontRotation(cx, cy) {
+        const dirs = [
+            { dx: 0,  dy:  1, rot: 0 },
+            { dx: 0,  dy: -1, rot: Math.PI },
+            { dx: 1,  dy:  0, rot: Math.PI / 2 },
+            { dx: -1, dy:  0, rot: -Math.PI / 2 }
+        ];
+        for (const d of dirs) {
+            const nx = cx + d.dx;
+            const ny = cy + d.dy;
+            if (nx >= 0 && nx < CITY_SIZE && ny >= 0 && ny < CITY_SIZE) {
+                if (cityMap[ny][nx] === 0) return d.rot;
+            }
+        }
+        return 0;
+    }
+
+    // ==================== МАТЕРИАЛЫ ====================
+    const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(WORLD_EXTENT + 80, WORLD_EXTENT + 80),
+        new THREE.MeshStandardMaterial({ color: 0x0a1a12, roughness: 1.0 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x0c1a14, roughness: 0.9 });
+    const houseWallMats = [
+        new THREE.MeshStandardMaterial({ color: 0x2a3a4a, roughness: 0.9 }),
+        new THREE.MeshStandardMaterial({ color: 0x3a2e3a, roughness: 0.9 }),
+        new THREE.MeshStandardMaterial({ color: 0x2e3a32, roughness: 0.9 }),
+        new THREE.MeshStandardMaterial({ color: 0x3a3a2a, roughness: 0.9 }),
+        new THREE.MeshStandardMaterial({ color: 0x2a2a3a, roughness: 0.9 })
+    ];
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a2a3a, roughness: 0.8 });
+    const windowLitMat = new THREE.MeshBasicMaterial({ color: 0xffe27a });
+    const windowDarkMat = new THREE.MeshStandardMaterial({ color: 0x0a1420, roughness: 0.5 });
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x1a0e08, roughness: 0.9 });
+    const doorMatOccupied = new THREE.MeshStandardMaterial({ color: 0xff2a2a, roughness: 0.8, emissive: 0x5a0000 });
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3a2a12, roughness: 1.0 });
+    const leafMat1 = new THREE.MeshStandardMaterial({ color: 0x1a6b3f, roughness: 0.95 });
+    const leafMat2 = new THREE.MeshStandardMaterial({ color: 0x2a9c5a, roughness: 0.95 });
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x4a5a6a, roughness: 0.5, metalness: 0.7 });
+    const lampMat = new THREE.MeshBasicMaterial({ color: 0xffe27a });
+    const grassMat = new THREE.MeshStandardMaterial({ color: 0x0e3a20, roughness: 1.0 });
+    const markingMat = new THREE.MeshBasicMaterial({ color: 0xd8ffe8 });
+    const flowerMats = [
+        new THREE.MeshBasicMaterial({ color: 0xff6b8a }),
+        new THREE.MeshBasicMaterial({ color: 0xffd76b }),
+        new THREE.MeshBasicMaterial({ color: 0xc9a0ff }),
+        new THREE.MeshBasicMaterial({ color: 0xff9f6b }),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+    ];
+
+    const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+    const sphereGeoBig = new THREE.SphereGeometry(1.3, 8, 6);
+    const sphereGeoMid = new THREE.SphereGeometry(1.0, 8, 6);
+    const sphereGeoSmall = new THREE.SphereGeometry(0.85, 8, 6);
+    const cylinderTrunkGeo = new THREE.CylinderGeometry(0.2, 0.28, 1.8, 6);
+    const cylinderPoleGeo = new THREE.CylinderGeometry(0.09, 0.12, 4.0, 6);
+    const sphereLampGeo = new THREE.SphereGeometry(0.28, 8, 6);
+    const planeWinGeo = new THREE.PlaneGeometry(0.55, 0.55);
+    const planeDoorGeo = new THREE.PlaneGeometry(0.9, 1.5);
+    const flowerGeo = new THREE.SphereGeometry(0.12, 5, 4);
+
+    const coneRoofCache = new Map();
+    function getRoofGeo(radius, height) {
+        const key = radius.toFixed(2) + "_" + height.toFixed(2);
+        if (!coneRoofCache.has(key)) {
+            coneRoofCache.set(key, new THREE.ConeGeometry(radius, height, 4));
+        }
+        return coneRoofCache.get(key);
+    }
+
+    function setBox(mesh, w, h, d, x, y, z) {
+        mesh.scale.set(w, h, d);
+        mesh.position.set(x, y, z);
+    }
+
+    function addWindow(group, px, py, pz, rotY, canGlow) {
+        const useGlow = canGlow && Math.random() < 0.65;
+        const win = new THREE.Mesh(planeWinGeo, useGlow ? windowLitMat : windowDarkMat);
+        win.position.set(px, py, pz);
+        win.rotation.y = rotY;
+        group.add(win);
+    }
+
+    // ==================== ДОМА ====================
+    const houses = [];
+    let houseIdCounter = 0;
+
+    function createHouse(x, z, cx, cy) {
+        const group = new THREE.Group();
+        const w = BLOCK * (0.75 + Math.random() * 0.15);
+        const d = BLOCK * (0.75 + Math.random() * 0.15);
+
+        const floors = 1 + Math.floor(Math.random() * 3);
+        const floorH = 1.65;
+        const h = floors * floorH + 0.35;
+
+        const wallMat = houseWallMats[Math.floor(Math.random() * houseWallMats.length)];
+        const walls = new THREE.Mesh(boxGeo, wallMat);
+        setBox(walls, w, h, d, 0, h / 2, 0);
+        walls.castShadow = true;
+        walls.receiveShadow = true;
+        group.add(walls);
+
+        const roof = new THREE.Mesh(getRoofGeo(Math.max(w, d) * 0.78, h * 0.55), roofMat);
+        roof.position.y = h + h * 0.275;
+        roof.rotation.y = Math.PI / 4;
+        roof.castShadow = true;
+        group.add(roof);
+
+        const windowsFront = Math.max(1, Math.floor(w / 1.6));
+        const windowsSide  = Math.max(1, Math.floor(d / 1.6));
+
+        for (let f = 0; f < floors; f++) {
+            const py = (f + 0.55) * floorH + 0.25;
+            for (let c = 0; c < windowsFront; c++) {
+                const px = -w / 2 + (c + 0.5) * (w / windowsFront);
+                addWindow(group, px, py, d / 2 + 0.02, 0, true);
+            }
+            for (let c = 0; c < windowsFront; c++) {
+                if (Math.random() > 0.4) continue;
+                const px = -w / 2 + (c + 0.5) * (w / windowsFront);
+                addWindow(group, px, py, -d / 2 - 0.02, Math.PI, true);
+            }
+            for (let c = 0; c < windowsSide; c++) {
+                if (Math.random() > 0.75) continue;
+                const pz = -d / 2 + (c + 0.5) * (d / windowsSide);
+                addWindow(group, w / 2 + 0.02, py, pz, Math.PI / 2, true);
+            }
+            for (let c = 0; c < windowsSide; c++) {
+                if (Math.random() > 0.75) continue;
+                const pz = -d / 2 + (c + 0.5) * (d / windowsSide);
+                addWindow(group, -w / 2 - 0.02, py, pz, -Math.PI / 2, true);
+            }
+        }
+
+        const door = new THREE.Mesh(planeDoorGeo, doorMat);
+        door.position.set(0, 0.75, d / 2 + 0.03);
+        group.add(door);
+
+        const frontRot = getFrontRotation(cx, cy);
+        group.position.set(x, 0, z);
+        group.rotation.y = frontRot;
+
+        const doorLocal = new THREE.Vector3(0, 0, d / 2 + 0.5);
+        doorLocal.applyAxisAngle(new THREE.Vector3(0, 1, 0), frontRot);
+        const doorWorld = new THREE.Vector3(x, 0, z).add(doorLocal);
+
+        const id = houseIdCounter++;
+
+        houses.push({
+            id, cx, cy,
+            x, z,
+            floors,
+            doorX: doorWorld.x,
+            doorZ: doorWorld.z,
+            doorMesh: door,
+            occupiedBy: null
+        });
+
+        return group;
+    }
+
+    function createTree(x, z) {
+        const group = new THREE.Group();
+        const trunk = new THREE.Mesh(cylinderTrunkGeo, trunkMat);
+        trunk.position.y = 0.9;
+        trunk.castShadow = true;
+        group.add(trunk);
+
+        const c1 = new THREE.Mesh(sphereGeoBig, leafMat1);
+        c1.position.y = 2.7; c1.castShadow = true; group.add(c1);
+
+        const c2 = new THREE.Mesh(sphereGeoMid, leafMat2);
+        c2.position.set(0.6, 3.2, 0.4); c2.castShadow = true; group.add(c2);
+
+        const c3 = new THREE.Mesh(sphereGeoSmall, leafMat2);
+        c3.position.set(-0.5, 3.3, -0.3); c3.castShadow = true; group.add(c3);
+
+        group.position.set(x, 0, z);
+        return group;
+    }
+
+    const lampPositions = [];
+    function createLamp(x, z) {
+        const group = new THREE.Group();
+        const pole = new THREE.Mesh(cylinderPoleGeo, poleMat);
+        pole.position.y = 2.0;
+        pole.castShadow = true;
+        group.add(pole);
+
+        const lamp = new THREE.Mesh(sphereLampGeo, lampMat);
+        lamp.position.y = 3.85;
+        group.add(lamp);
+
+        group.position.set(x, 0, z);
+        lampPositions.push({ x, z });
+        return group;
+    }
+
+    function createGrassPatch(x, z) {
+        const group = new THREE.Group();
+        const patch = new THREE.Mesh(
+            new THREE.PlaneGeometry(BLOCK * 0.85, BLOCK * 0.85),
+            grassMat
+        );
+        patch.rotation.x = -Math.PI / 2;
+        patch.position.y = 0.02;
+        patch.receiveShadow = true;
+        group.add(patch);
+
+        if (Math.random() < 0.55) {
+            const count = 1 + Math.floor(Math.random() * 4);
+            for (let i = 0; i < count; i++) {
+                const flower = new THREE.Mesh(
+                    flowerGeo,
+                    flowerMats[Math.floor(Math.random() * flowerMats.length)]
+                );
+                flower.position.set(
+                    (Math.random() - 0.5) * BLOCK * 0.55,
+                    0.12,
+                    (Math.random() - 0.5) * BLOCK * 0.55
+                );
+                flower.scale.setScalar(0.7 + Math.random() * 0.6);
+                group.add(flower);
+            }
+        }
+        group.position.set(x, 0, z);
+        return group;
+    }
+
+    // ==================== ДОРОГИ ====================
+    for (let cy = 0; cy < CITY_SIZE; cy++) {
+        for (let cx = 0; cx < CITY_SIZE; cx++) {
+            if (cityMap[cy][cx] !== 0) continue;
+            const w = worldFromCell(cx, cy);
+            const strip = new THREE.Mesh(
+                new THREE.PlaneGeometry(CELL, CELL),
+                roadMat
+            );
+            strip.rotation.x = -Math.PI / 2;
+            strip.position.set(w.x, 0.01, w.z);
+            strip.receiveShadow = true;
+            scene.add(strip);
+        }
+    }
+
+    // ==================== ОБЪЕКТЫ ГОРОДА ====================
+    for (let cy = 0; cy < CITY_SIZE; cy++) {
+        for (let cx = 0; cx < CITY_SIZE; cx++) {
+            const type = cityMap[cy][cx];
+            if (type === 0) continue;
+            const w = worldFromCell(cx, cy);
+            if (type === 1) scene.add(createHouse(w.x, w.z, cx, cy));
+            else if (type === 2) scene.add(createTree(w.x, w.z));
+            else if (type === 3) scene.add(createLamp(w.x, w.z));
+            else if (type === 4) scene.add(createGrassPatch(w.x, w.z));
+        }
+    }
+
+    // ==================== РАЗМЕТКА ====================
+    for (let cy = 0; cy < CITY_SIZE; cy++) {
+        for (let cx = 0; cx < CITY_SIZE; cx++) {
+            if (cityMap[cy][cx] !== 0) continue;
+
+            const roadLeft  = isRoadCell(cx - 1, cy);
+            const roadRight = isRoadCell(cx + 1, cy);
+            const roadUp    = isRoadCell(cx, cy - 1);
+            const roadDown  = isRoadCell(cx, cy + 1);
+
+            const isVertical   = roadUp && roadDown;
+            const isHorizontal = roadLeft && roadRight;
+            const isCross      = (roadLeft || roadRight) && (roadUp || roadDown);
+
+            if (isCross) continue;
+
+            const w = worldFromCell(cx, cy);
+            if (isHorizontal) {
+                const m = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.16), markingMat);
+                m.rotation.x = -Math.PI / 2;
+                m.position.set(w.x, 0.02, w.z);
+                scene.add(m);
+            } else if (isVertical) {
+                const m = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 1.4), markingMat);
+                m.rotation.x = -Math.PI / 2;
+                m.position.set(w.x, 0.02, w.z);
+                scene.add(m);
+            }
+        }
+    }
+
+    // ==================== СВЕТ ФОНАРЕЙ ====================
+    const nightPointLights = [];
+    const sortedLamps = lampPositions.slice().sort((a, b) =>
+        (a.x * a.x + a.z * a.z) - (b.x * b.x + b.z * b.z)
+    );
+    for (let i = 0; i < Math.min(8, sortedLamps.length); i++) {
+        const p = sortedLamps[i];
+        const light = new THREE.PointLight(0xffd76b, 1.3, 14, 2);
+        light.position.set(p.x, 3.85, p.z);
+        scene.add(light);
+        nightPointLights.push(light);
+    }
+
+    // ==================== ЗВЁЗДЫ И ЛУНА ====================
+    const starCount = 500;
+    const starPos = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+        const r = 180 + Math.random() * 120;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI * 0.45;
+        starPos[i * 3]     = Math.sin(phi) * Math.cos(theta) * r;
+        starPos[i * 3 + 1] = Math.cos(phi) * r + 10;
+        starPos[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * r;
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+    const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+        color: 0xc8ffe0, size: 0.45, sizeAttenuation: true, transparent: true, opacity: 0.9
+    }));
+    scene.add(stars);
+
+    const moon = new THREE.Mesh(
+        new THREE.SphereGeometry(4, 20, 16),
+        new THREE.MeshBasicMaterial({ color: 0xe0ffe8 })
+    );
+    moon.position.set(-50, 60, -90);
+    scene.add(moon);
+
+    let moonGlow = null;
+    (() => {
+        const c = document.createElement("canvas");
+        c.width = 128; c.height = 128;
+        const g = c.getContext("2d");
+        const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+        grd.addColorStop(0, "rgba(200,255,220,0.7)");
+        grd.addColorStop(0.4, "rgba(200,255,220,0.2)");
+        grd.addColorStop(1, "rgba(200,255,220,0)");
+        g.fillStyle = grd;
+        g.fillRect(0, 0, 128, 128);
+        moonGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: new THREE.CanvasTexture(c),
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        }));
+        moonGlow.scale.set(40, 40, 1);
+        moonGlow.position.copy(moon.position);
+        scene.add(moonGlow);
+    })();
+
+    let isNight = false;
+    const timeBtn = document.getElementById("timeBtn");
+
+    function applyTimeOfDay() {
+        if (isNight) {
+            renderer.setClearColor(0x05070d, 1);
+            scene.fog.color.setHex(0x05070d);
+            scene.fog.near = 60;
+            scene.fog.far = 280;
+            sunLight.color.setHex(0xc8ffe0);
+            sunLight.intensity = 1.1;
+            sunLight.position.set(-20, 45, -15);
+            ambientLight.color.setHex(0x2a4a5a);
+            ambientLight.intensity = 0.9;
+            hemiLight.color.setHex(0x3a5a6a);
+            hemiLight.groundColor.setHex(0x0a1a12);
+            hemiLight.intensity = 0.5;
+            stars.visible = true;
+            moon.visible = true;
+            if (moonGlow) moonGlow.visible = true;
+            lampMat.color.setHex(0xffe27a);
+            windowLitMat.color.setHex(0xffe27a);
+            for (const l of nightPointLights) l.visible = true;
+            timeBtn.textContent = "Ночь";
+            ground.material.color.setHex(0x0a1a12);
+        } else {
+            renderer.setClearColor(0x7ec8e8, 1);
+            scene.fog.color.setHex(0xb8d4e8);
+            scene.fog.near = 100;
+            scene.fog.far = 420;
+            sunLight.color.setHex(0xfff2d0);
+            sunLight.intensity = 1.55;
+            sunLight.position.set(40, 70, 30);
+            ambientLight.color.setHex(0xc8d8e8);
+            ambientLight.intensity = 0.75;
+            hemiLight.color.setHex(0xa0c8f0);
+            hemiLight.groundColor.setHex(0x5a8a4a);
+            hemiLight.intensity = 0.55;
+            stars.visible = false;
+            moon.visible = false;
+            if (moonGlow) moonGlow.visible = false;
+            lampMat.color.setHex(0xccccaa);
+            windowLitMat.color.setHex(0x1a2838);
+            for (const l of nightPointLights) l.visible = false;
+            timeBtn.textContent = "День";
+            ground.material.color.setHex(0x3a6b3a);
+        }
+    }
+
+    timeBtn.addEventListener("click", () => {
+        isNight = !isNight;
+        applyTimeOfDay();
+    });
+    applyTimeOfDay();
+
+    // ==================== ИГРОВОЙ ПЕРСОНАЖ (МОДЕЛЬ) ====================
+    const S = 0.014;
+    const PLAYER_COLLISION_RADIUS = 80 * S * 0.55;
+    const PLAYER_REF_SPEED = 6.0;
+    const matBody = new THREE.MeshStandardMaterial({ color: 0x6bffb8, roughness: 0.85, metalness: 0.05 });
+    const matBodyLight = new THREE.MeshStandardMaterial({ color: 0xa0ffd0, roughness: 0.85 });
+    const matEye = new THREE.MeshBasicMaterial({ color: 0x0a1a12 });
+    const matEyeShine = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const matPink = new THREE.MeshStandardMaterial({ color: 0xffb0d0, roughness: 0.8 });
+    const matCheek = new THREE.MeshBasicMaterial({ color: 0xff8ab6 });
+
+    const pokemonRoot = new THREE.Group();
+    const pokemonLift = new THREE.Group();
+    pokemonLift.position.y = 79 * S;
+    pokemonRoot.add(pokemonLift);
+
+    function addBlock(parent, w, h, d, px, py, pz, mat, castShadow) {
+        const mesh = new THREE.Mesh(boxGeo, mat);
+        mesh.scale.set(w * S, h * S, d * S);
+        mesh.position.set((px - 100) * S, (100 - py) * S, (pz || 0) * S);
+        if (castShadow !== false) mesh.castShadow = true;
+        parent.add(mesh);
+        return mesh;
+    }
+
+    const bodyGroup = new THREE.Group();
+    pokemonLift.add(bodyGroup);
+    addBlock(bodyGroup, 80, 55, 30, 100, 142.5, 0, matBody);
+    addBlock(bodyGroup, 80, 20, 32, 100, 125, 0, matBodyLight);
+
+    const legBackGroup = new THREE.Group();
+    legBackGroup.position.set((79 - 100) * S, (100 - 172) * S, 0);
+    pokemonLift.add(legBackGroup);
+    {
+        const m = new THREE.Mesh(boxGeo, matBody);
+        m.scale.set(22 * S, 14 * S, 26 * S);
+        m.castShadow = true;
+        legBackGroup.add(m);
+    }
+
+    const legFrontGroup = new THREE.Group();
+    legFrontGroup.position.set((121 - 100) * S, (100 - 172) * S, 0);
+    pokemonLift.add(legFrontGroup);
+    {
+        const m = new THREE.Mesh(boxGeo, matBody);
+        m.scale.set(22 * S, 14 * S, 26 * S);
+        m.castShadow = true;
+        legFrontGroup.add(m);
+    }
+
+    const tailGroup = new THREE.Group();
+    tailGroup.position.set(0, (100 - 140) * S, -18 * S);
+    pokemonLift.add(tailGroup);
+    {
+        const t1 = new THREE.Mesh(boxGeo, matBody);
+        t1.scale.set(12 * S, 40 * S, 12 * S); t1.castShadow = true; tailGroup.add(t1);
+        const t2 = new THREE.Mesh(boxGeo, matBody);
+        t2.scale.set(12 * S, 30 * S, 12 * S);
+        t2.position.set(0, -25 * S, -12 * S); t2.castShadow = true; tailGroup.add(t2);
+        const t3 = new THREE.Mesh(boxGeo, matBody);
+        t3.scale.set(12 * S, 30 * S, 12 * S);
+        t3.position.set(0, -45 * S, -24 * S); t3.castShadow = true; tailGroup.add(t3);
+    }
+
+    const headGroup = new THREE.Group();
+    pokemonLift.add(headGroup);
+    addBlock(headGroup, 90, 70, 32, 100, 90, 0, matBody);
+    addBlock(headGroup, 90, 25, 33, 100, 67, 0, matBodyLight);
+
+    const earLeftGroup = new THREE.Group();
+    earLeftGroup.position.set((65 - 100) * S, (100 - 42.5) * S, 0);
+    headGroup.add(earLeftGroup);
+    {
+        const m = new THREE.Mesh(boxGeo, matBody);
+        m.scale.set(20 * S, 35 * S, 20 * S); m.castShadow = true; earLeftGroup.add(m);
+        const inner = new THREE.Mesh(boxGeo, matPink);
+        inner.scale.set(10 * S, 15 * S, 21 * S); earLeftGroup.add(inner);
+    }
+
+    const earRightGroup = new THREE.Group();
+    earRightGroup.position.set((135 - 100) * S, (100 - 42.5) * S, 0);
+    headGroup.add(earRightGroup);
+    {
+        const m = new THREE.Mesh(boxGeo, matBody);
+        m.scale.set(20 * S, 35 * S, 20 * S); m.castShadow = true; earRightGroup.add(m);
+        const inner = new THREE.Mesh(boxGeo, matPink);
+        inner.scale.set(10 * S, 15 * S, 21 * S); earRightGroup.add(inner);
+    }
+
+    addBlock(headGroup, 16, 20, 2, 80, 82, 17, matEye, false);
+    addBlock(headGroup, 16, 20, 2, 120, 82, 17, matEye, false);
+    addBlock(headGroup, 6, 6, 2.5, 79, 79, 17.5, matEyeShine, false);
+    addBlock(headGroup, 6, 6, 2.5, 119, 79, 17.5, matEyeShine, false);
+    addBlock(headGroup, 14, 8, 2, 67, 102, 17, matCheek, false);
+    addBlock(headGroup, 14, 8, 2, 133, 102, 17, matCheek, false);
+    addBlock(headGroup, 20, 4, 2, 100, 100, 17, matEye, false);
+    addBlock(headGroup, 12, 6, 2, 100, 105, 17, matEye, false);
+
+    const shadowMesh = new THREE.Mesh(
+        new THREE.CircleGeometry(0.6, 20),
+        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55, depthWrite: false })
+    );
+    shadowMesh.rotation.x = -Math.PI / 2;
+    shadowMesh.position.y = 0.03;
+    pokemonRoot.add(shadowMesh);
+
+    const OLD_RING_OUTER = 1.2;
+    const OLD_RING_INNER_WIDE = 0.4;
+    const OLD_RING_INNER_NARROW = 0.9;
+
+    const oldGlowGeoWide = new THREE.RingGeometry(OLD_RING_INNER_WIDE, OLD_RING_OUTER, 32);
+    const oldGlowGeoNarrow = new THREE.RingGeometry(OLD_RING_INNER_NARROW, OLD_RING_OUTER, 32);
+
+    const oldGlowMesh = new THREE.Mesh(
+        oldGlowGeoWide,
+        new THREE.MeshBasicMaterial({
+            color: 0x6bffb8,
+            transparent: true,
+            opacity: 0.15,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        })
+    );
+    oldGlowMesh.rotation.x = -Math.PI / 2;
+    oldGlowMesh.position.y = 0.02;
+    pokemonRoot.add(oldGlowMesh);
+
+    const ENERGY_SEGMENTS = 10;
+    const energySegments = [];
+    const energyGroup = new THREE.Group();
+    energyGroup.visible = false;
+    pokemonRoot.add(energyGroup);
+
+    const segInnerRadius = 0.95;
+    const segOuterRadius = 1.15;
+
+    for (let i = 0; i < ENERGY_SEGMENTS; i++) {
+        const geo = new THREE.RingGeometry(
+            segInnerRadius,
+            segOuterRadius,
+            4, 1,
+            (i / ENERGY_SEGMENTS) * Math.PI * 2,
+            (Math.PI * 2) / ENERGY_SEGMENTS
+        );
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0x6bffb8,
+            transparent: true,
+            opacity: 0.85,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.y = 0.025;
+        energyGroup.add(mesh);
+        energySegments.push(mesh);
+    }
+
+    scene.add(pokemonRoot);
+
+    // ==================== NPC: МОДЕЛИ ====================
+    const NPC_COUNTS = { dragon: 3, fox: 3, cat: 3 };
+    const TOTAL_NPC = 9;
+
+    const NPC_DEFS = {
+        dragon: {
+            id: 'dragon', name: 'Дракоша',
+            bodyCol: 0x5ac88a, lightCol: 0xa0e8b8, accentCol: 0xffd76b, cheekCol: 0xff9ab6,
+            bodyW: 85, bodyH: 58, bodyD: 34,
+            headW: 88, headH: 68, headD: 36,
+            earType: 'horn', earScale: 1.3,
+            tailType: 'spike', tailScale: 1.6,
+            legH: 15, eyeShape: 'square',
+            hasBelly: true, hasCheeks: false,
+            speedMult: 0.85,
+            sightMult: 0.9,
+            senseMult: 0.9,
+            boostMult: 1.5,
+            hideTime: 6.0,
+            recoverTime: 7.0
+        },
+        fox: {
+            id: 'fox', name: 'Лисёнок',
+            bodyCol: 0xff8a3a, lightCol: 0xffc48a, accentCol: 0xffe8a0, cheekCol: 0xff5a3a,
+            bodyW: 75, bodyH: 55, bodyD: 30,
+            headW: 85, headH: 65, headD: 32,
+            earType: 'pointy', earScale: 1.4,
+            tailType: 'fluffy', tailScale: 1.5,
+            legH: 14, eyeShape: 'square',
+            hasBelly: true, hasCheeks: true,
+            speedMult: 1.05,
+            sightMult: 1.0,
+            senseMult: 0.8,
+            boostMult: 1.9,
+            hideTime: 3.5,
+            recoverTime: 5.0
+        },
+        cat: {
+            id: 'cat', name: 'Кошечка',
+            bodyCol: 0x9a8aa8, lightCol: 0xd0c8d8, accentCol: 0xffb0d0, cheekCol: 0xff9ab6,
+            bodyW: 68, bodyH: 52, bodyD: 26,
+            headW: 78, headH: 60, headD: 30,
+            earType: 'triangle', earScale: 1.2,
+            tailType: 'long', tailScale: 1.8,
+            legH: 13, eyeShape: 'round',
+            hasBelly: true, hasCheeks: true,
+            speedMult: 0.95,
+            sightMult: 1.15,
+            senseMult: 1.3,
+            boostMult: 1.7,
+            hideTime: 4.5,
+            recoverTime: 6.0
+        }
+    };
+
+    function createNpcModel(def) {
+        const root = new THREE.Group();
+        const lift = new THREE.Group();
+        lift.position.y = 79 * S;
+        root.add(lift);
+
+        const {
+            bodyCol, lightCol, accentCol, cheekCol,
+            bodyW, bodyH, bodyD,
+            headW, headH, headD,
+            earType, earScale,
+            tailType,
+            legH, eyeShape,
+            hasBelly, hasCheeks
+        } = def;
+
+        const matB = new THREE.MeshStandardMaterial({ color: bodyCol, roughness: 0.85, metalness: 0.05 });
+        const matL = new THREE.MeshStandardMaterial({ color: lightCol, roughness: 0.85 });
+        const matA = new THREE.MeshStandardMaterial({ color: accentCol, roughness: 0.8 });
+        const matE = new THREE.MeshBasicMaterial({ color: 0x0a1a12 });
+        const matS = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const matC = new THREE.MeshBasicMaterial({ color: cheekCol });
+        const matPinkLocal = new THREE.MeshStandardMaterial({ color: 0xffb0d0, roughness: 0.8 });
+
+        function ab(parent, w, h, d, px, py, pz, mat, cs) {
+            const mesh = new THREE.Mesh(boxGeo, mat);
+            mesh.scale.set(w * S, h * S, d * S);
+            mesh.position.set((px - 100) * S, (100 - py) * S, (pz || 0) * S);
+            if (cs !== false) mesh.castShadow = true;
+            parent.add(mesh);
+            return mesh;
+        }
+
+        const bodyG = new THREE.Group();
+        lift.add(bodyG);
+        ab(bodyG, bodyW, bodyH, bodyD, 100, 142.5, 0, matB);
+        if (hasBelly) {
+            ab(bodyG, bodyW * 0.85, 18, bodyD + 2, 100, 125, 0, matL);
+        }
+
+        const legBack = new THREE.Group();
+        legBack.position.set((79 - 100) * S, (100 - 172) * S, 0);
+        lift.add(legBack);
+        {
+            const m = new THREE.Mesh(boxGeo, matB);
+            m.scale.set(22 * S, legH * S, 26 * S);
+            m.castShadow = true;
+            legBack.add(m);
+        }
+
+        const legFront = new THREE.Group();
+        legFront.position.set((121 - 100) * S, (100 - 172) * S, 0);
+        lift.add(legFront);
+        {
+            const m = new THREE.Mesh(boxGeo, matB);
+            m.scale.set(22 * S, legH * S, 26 * S);
+            m.castShadow = true;
+            legFront.add(m);
+        }
+
+        const tail = new THREE.Group();
+        tail.position.set(0, (100 - 140) * S, -18 * S);
+        lift.add(tail);
+
+        if (tailType === 'fluffy') {
+            const t1 = new THREE.Mesh(boxGeo, matB);
+            t1.scale.set(18 * S, 35 * S, 18 * S); t1.castShadow = true; tail.add(t1);
+            const t2 = new THREE.Mesh(boxGeo, matL);
+            t2.scale.set(15 * S, 28 * S, 15 * S);
+            t2.position.set(0, -28 * S, -10 * S); t2.castShadow = true; tail.add(t2);
+            const t3 = new THREE.Mesh(boxGeo, matL);
+            t3.scale.set(12 * S, 20 * S, 12 * S);
+            t3.position.set(0, -48 * S, -20 * S); t3.castShadow = true; tail.add(t3);
+        } else if (tailType === 'long') {
+            const t1 = new THREE.Mesh(boxGeo, matB);
+            t1.scale.set(12 * S, 30 * S, 12 * S); t1.castShadow = true; tail.add(t1);
+            const t2 = new THREE.Mesh(boxGeo, matB);
+            t2.scale.set(10 * S, 28 * S, 10 * S);
+            t2.position.set(0, -25 * S, -10 * S); t2.castShadow = true; tail.add(t2);
+            const t3 = new THREE.Mesh(boxGeo, matA);
+            t3.scale.set(10 * S, 10 * S, 10 * S);
+            t3.position.set(0, -42 * S, -18 * S); t3.castShadow = true; tail.add(t3);
+        } else if (tailType === 'spike') {
+            const t1 = new THREE.Mesh(boxGeo, matB);
+            t1.scale.set(14 * S, 35 * S, 14 * S); t1.castShadow = true; tail.add(t1);
+            const t2 = new THREE.Mesh(boxGeo, matA);
+            t2.scale.set(12 * S, 28 * S, 12 * S);
+            t2.position.set(0, -28 * S, -12 * S); t2.castShadow = true; tail.add(t2);
+            for (let i = 0; i < 3; i++) {
+                const spike = new THREE.Mesh(boxGeo, matA);
+                spike.scale.set(6 * S, 12 * S, 6 * S);
+                spike.position.set(0, -10 * S - i * 12 * S, -8 * S);
+                spike.rotation.z = 0.4;
+                tail.add(spike);
+            }
+        }
+
+        const head = new THREE.Group();
+        lift.add(head);
+        ab(head, headW, headH, headD, 100, 90, 0, matB);
+        if (hasBelly) {
+            ab(head, headW, 22, headD + 1, 100, 67, 0, matL);
+        }
+
+        const earL = new THREE.Group();
+        earL.position.set((65 - 100) * S, (100 - 42.5) * S, 0);
+        head.add(earL);
+
+        const earR = new THREE.Group();
+        earR.position.set((135 - 100) * S, (100 - 42.5) * S, 0);
+        head.add(earR);
+
+        function buildEar(parent, isLeft) {
+            const sign = isLeft ? -1 : 1;
+            if (earType === 'pointy') {
+                const m = new THREE.Mesh(boxGeo, matB);
+                m.scale.set(20 * S * earScale, 35 * S * earScale, 20 * S * earScale);
+                m.castShadow = true; parent.add(m);
+                const inner = new THREE.Mesh(boxGeo, matPinkLocal);
+                inner.scale.set(10 * S * earScale, 18 * S * earScale, 21 * S * earScale);
+                parent.add(inner);
+                const tip = new THREE.Mesh(boxGeo, matB);
+                tip.scale.set(14 * S * earScale, 10 * S * earScale, 14 * S * earScale);
+                tip.position.y = 22 * S * earScale;
+                tip.castShadow = true;
+                parent.add(tip);
+            } else if (earType === 'triangle') {
+                const m = new THREE.Mesh(boxGeo, matB);
+                m.scale.set(22 * S * earScale, 26 * S * earScale, 18 * S * earScale);
+                m.castShadow = true; parent.add(m);
+                const inner = new THREE.Mesh(boxGeo, matPinkLocal);
+                inner.scale.set(12 * S * earScale, 14 * S * earScale, 19 * S * earScale);
+                parent.add(inner);
+                const tip = new THREE.Mesh(boxGeo, matB);
+                tip.scale.set(14 * S * earScale, 12 * S * earScale, 14 * S * earScale);
+                tip.position.y = 18 * S * earScale;
+                tip.castShadow = true;
+                parent.add(tip);
+            } else if (earType === 'horn') {
+                const m = new THREE.Mesh(boxGeo, matA);
+                m.scale.set(16 * S * earScale, 30 * S * earScale, 16 * S * earScale);
+                m.position.x = sign * 5 * S;
+                m.rotation.z = sign * 0.3;
+                m.castShadow = true;
+                parent.add(m);
+                const tip = new THREE.Mesh(boxGeo, matA);
+                tip.scale.set(10 * S * earScale, 14 * S * earScale, 10 * S * earScale);
+                tip.position.set(sign * 10 * S, 20 * S * earScale, 0);
+                tip.rotation.z = sign * 0.5;
+                tip.castShadow = true;
+                parent.add(tip);
+            }
+        }
+
+        buildEar(earL, true);
+        buildEar(earR, false);
+
+        const frontZ = headD / 2 + 1;
+        if (eyeShape === 'square') {
+            ab(head, 16, 20, 2, 80, 82, frontZ, matE, false);
+            ab(head, 16, 20, 2, 120, 82, frontZ, matE, false);
+            ab(head, 6, 6, 2.5, 79, 79, frontZ + 0.5, matS, false);
+            ab(head, 6, 6, 2.5, 119, 79, frontZ + 0.5, matS, false);
+        } else if (eyeShape === 'round') {
+            ab(head, 14, 14, 2, 80, 82, frontZ, matE, false);
+            ab(head, 14, 14, 2, 120, 82, frontZ, matE, false);
+            ab(head, 6, 6, 2.5, 78, 80, frontZ + 0.5, matS, false);
+            ab(head, 6, 6, 2.5, 118, 80, frontZ + 0.5, matS, false);
+        }
+
+        if (hasCheeks) {
+            ab(head, 14, 8, 2, 67, 102, frontZ, matC, false);
+            ab(head, 14, 8, 2, 133, 102, frontZ, matC, false);
+        }
+
+        ab(head, 20, 4, 2, 100, 100, frontZ, matE, false);
+
+        const sh = new THREE.Mesh(
+            new THREE.CircleGeometry(0.55, 16),
+            new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45, depthWrite: false })
+        );
+        sh.rotation.x = -Math.PI / 2;
+        sh.position.y = 0.03;
+        root.add(sh);
+
+        const alertGlow = new THREE.Mesh(
+            new THREE.CircleGeometry(1.2, 24),
+            new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.15,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            })
+        );
+        alertGlow.rotation.x = -Math.PI / 2;
+        alertGlow.position.y = 0.02;
+        alertGlow.visible = false;
+        root.add(alertGlow);
+
+        scene.add(root);
+
+        return {
+            root, lift, legBack, legFront, tail, head, earL, earR,
+            alertGlow,
+            collisionRadius: Math.max(bodyW, bodyD) * S * 0.55
+        };
+    }
+
+    // ==================== СПИСОК ДОРОЖНЫХ КЛЕТОК ====================
+    const roadCells = [];
+    for (let cy = 0; cy < CITY_SIZE; cy++) {
+        for (let cx = 0; cx < CITY_SIZE; cx++) {
+            if (cityMap[cy][cx] === 0) roadCells.push({ cx, cy });
+        }
+    }
+
+    function randomRoadWorld() {
+        const cell = roadCells[Math.floor(Math.random() * roadCells.length)];
+        const w = worldFromCell(cell.cx, cell.cy);
+        return { x: w.x, z: w.z };
+    }
+
+// ============================================================
+// ==================== БЛОК 3: УТИЛИТЫ ====================
+// ============================================================
+// Содержит: углы, направления, BFS, видимость, движение по клеткам,
+// safe spots. НЕТ логики состояний NPC и НЕТ кода игрока.
+// ИЗМЕНЕНИЯ: защита от undefined, ограничение частоты пересчёта,
+// нормализация индексов, запрет на частый computeSafeSpots.
+
+    const SENSE_RADIUS = CELL * 2.5;
+    const SIGHT_RANGE  = CELL * 6;
+    const PANIC_RADIUS = CELL * 1.5;
+    const HARD_FORBID_RADIUS = CELL * 3.0;
+    const DOT_FORBID = 0.15;
+
+    // Ограничители частоты тяжёлых операций
+    const SAFE_SPOTS_INTERVAL = 2.5;   // пересчёт safe spots не чаще раза в 2.5 сек
+    const ESCAPE_REPICK_INTERVAL = 0.4; // пересчёт escape goal не чаще раза в 0.4 сек
+
+    const DIRS = {
+        'x+': { dx:  1, dz:  0, angle:  Math.PI / 2 },
+        'x-': { dx: -1, dz:  0, angle: -Math.PI / 2 },
+        'z+': { dx:  0, dz:  1, angle:  0 },
+        'z-': { dx:  0, dz: -1, angle:  Math.PI }
+    };
+    const DIR_KEYS = ['x+', 'x-', 'z+', 'z-'];
+    const OPPOSITE = { 'x+': 'x-', 'x-': 'x+', 'z+': 'z-', 'z-': 'z+' };
+
+    function angleDelta(a, b) {
+        let d = a - b;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        return d;
+    }
+
+    function normalizeAngle(a) {
+        while (a > Math.PI) a -= Math.PI * 2;
+        while (a < -Math.PI) a += Math.PI * 2;
+        return a;
+    }
+
+    function dirFromCells(fromCx, fromCy, toCx, toCy) {
+        if (toCx === fromCx + 1 && toCy === fromCy) return 'x+';
+        if (toCx === fromCx - 1 && toCy === fromCy) return 'x-';
+        if (toCx === fromCx && toCy === fromCy + 1) return 'z+';
+        if (toCx === fromCx && toCy === fromCy - 1) return 'z-';
+        return null;
+    }
+
+    function isDeadEnd(cx, cy) {
+        let free = 0;
+        if (isRoadCell(cx + 1, cy)) free++;
+        if (isRoadCell(cx - 1, cy)) free++;
+        if (isRoadCell(cx, cy + 1)) free++;
+        if (isRoadCell(cx, cy - 1)) free++;
+        return free <= 1;
+    }
+
+    function isDeadEndDeep(cx, cy, dirKey, depth) {
+        const dv = DIRS[dirKey];
+        let x = cx, y = cy;
+        for (let i = 0; i < depth; i++) {
+            x += dv.dx; y += dv.dz;
+            if (!isRoadCell(x, y)) return true;
+        }
+        return isDeadEnd(x, y);
+    }
+
+    function findPathBFS(startCx, startCy, goalCx, goalCy) {
+        if (startCx === goalCx && startCy === goalCy) return [{ cx: startCx, cy: startCy }];
+        const key = (cx, cy) => cy * CITY_SIZE + cx;
+        const queue = [{ cx: startCx, cy: startCy }];
+        const visited = new Set([key(startCx, startCy)]);
+        const parent = new Map();
+
+        const dirs = [
+            { dx: 0, dy: 1 },
+            { dx: 0, dy: -1 },
+            { dx: 1, dy: 0 },
+            { dx: -1, dy: 0 }
+        ];
+
+        let found = false;
+        while (queue.length > 0 && !found) {
+            const cur = queue.shift();
+            for (const d of dirs) {
+                const nx = cur.cx + d.dx;
+                const ny = cur.cy + d.dy;
+                if (nx < 0 || nx >= CITY_SIZE || ny < 0 || ny >= CITY_SIZE) continue;
+                if (cityMap[ny][nx] !== 0) continue;
+                const k = key(nx, ny);
+                if (visited.has(k)) continue;
+                visited.add(k);
+                parent.set(k, { cx: cur.cx, cy: cur.cy });
+                if (nx === goalCx && ny === goalCy) {
+                    found = true;
+                    break;
+                }
+                queue.push({ cx: nx, cy: ny });
+            }
+        }
+
+        if (!found) return null;
+
+        const path = [];
+        let cur = { cx: goalCx, cy: goalCy };
+        while (cur) {
+            path.unshift(cur);
+            const k = key(cur.cx, cur.cy);
+            cur = parent.get(k) || null;
+        }
+        return path;
+    }
+
+    function hasLineOfSight(ax, az, bx, bz, maxRange) {
+        const range = maxRange || SIGHT_RANGE;
+        const dx = bx - ax;
+        const dz = bz - az;
+        const distSq = dx * dx + dz * dz;
+        if (distSq > range * range) return false;
+
+        const ca = cellFromWorld(ax, az);
+        const cb = cellFromWorld(bx, bz);
+        if (!isRoadCell(ca.cx, ca.cy) || !isRoadCell(cb.cx, cb.cy)) return false;
+        const sameRow = ca.cy === cb.cy;
+        const sameCol = ca.cx === cb.cx;
+        if (!sameRow && !sameCol) return false;
+        if (sameRow) {
+            const minX = Math.min(ca.cx, cb.cx);
+            const maxX = Math.max(ca.cx, cb.cx);
+            for (let x = minX + 1; x < maxX; x++) {
+                if (cityMap[ca.cy][x] !== 0) return false;
+            }
+        } else {
+            const minY = Math.min(ca.cy, cb.cy);
+            const maxY = Math.max(ca.cy, cb.cy);
+            for (let y = minY + 1; y < maxY; y++) {
+                if (cityMap[y][ca.cx] !== 0) return false;
+            }
+        }
+        return true;
+    }
+
+    function getHouseDoorCell(h) {
+        if (!h) return null;
+        const around = [
+            { cx: h.cx, cy: h.cy + 1 },
+            { cx: h.cx, cy: h.cy - 1 },
+            { cx: h.cx + 1, cy: h.cy },
+            { cx: h.cx - 1, cy: h.cy }
+        ];
+        for (const a of around) {
+            if (isRoadCell(a.cx, a.cy)) return a;
+        }
+        return null;
+    }
+
+    function isDirectionAllowed(npc, dirKey) {
+        const dv = DIRS[dirKey];
+        if (!dv) return false;
+        const toPX = player.x - npc.x;
+        const toPZ = player.z - npc.z;
+        const len = Math.hypot(toPX, toPZ) || 1;
+        const dist = len;
+
+        if (dist > HARD_FORBID_RADIUS) return true;
+
+        const tX = toPX / len;
+        const tZ = toPZ / len;
+        const dot = dv.dx * tX + dv.dz * tZ;
+        return dot <= DOT_FORBID;
+    }
+
+    // Единая функция шага к центру клетки.
+    // Возвращает true, если дошли.
+    function stepTowardCell(npc, cx, cy, dt, speed) {
+        const w = worldFromCell(cx, cy);
+        const dx = w.x - npc.x;
+        const dz = w.z - npc.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 0.05) return true;
+
+        const moveStep = speed * dt;
+        const k = Math.min(1, moveStep / dist);
+        npc.x += dx * k;
+        npc.z += dz * k;
+
+        if (dist > 0.15) {
+            npc.desiredAngle = Math.atan2(dx, dz);
+        }
+        return false;
+    }
+
+    // Двигает NPC в направлении dirKey. Возвращает:
+    // 'reached' | 'moving' | 'blocked'
+    function moveInDirection(npc, dirKey, dt, speed) {
+        const dv = DIRS[dirKey];
+        if (!dv) return 'blocked';
+        const c = cellFromWorld(npc.x, npc.z);
+        const nextCx = c.cx + dv.dx;
+        const nextCy = c.cy + dv.dz;
+        if (!isRoadCell(nextCx, nextCy)) return 'blocked';
+        const reached = stepTowardCell(npc, nextCx, nextCy, dt, speed);
+        return reached ? 'reached' : 'moving';
+    }
+
+    // === SAFE SPOTS: 3 безопасные клетки ===
+    // ВАЖНО: вызывается ТОЛЬКО по таймеру. Не вызывать каждый кадр!
+    function computeSafeSpots(npc) {
+        const c = cellFromWorld(npc.x, npc.z);
+        const candidates = [];
+
+        const step = 3;
+        for (let i = 0; i < roadCells.length; i += step) {
+            const cell = roadCells[i];
+            const w = worldFromCell(cell.cx, cell.cy);
+
+            const dxP = player.x - w.x;
+            const dzP = player.z - w.z;
+            const distToPlayer = Math.hypot(dxP, dzP);
+
+            if (distToPlayer < SENSE_RADIUS * 1.5) continue;
+
+            const dxN = w.x - npc.x;
+            const dzN = w.z - npc.z;
+            const distToNpc = Math.hypot(dxN, dzN);
+
+            if (distToNpc > CELL * 14) continue;
+            if (distToNpc < CELL * 2) continue;
+
+            const toPX = player.x - npc.x;
+            const toPZ = player.z - npc.z;
+            const toPLen = Math.hypot(toPX, toPZ) || 1;
+            const tX = toPX / toPLen;
+            const tZ = toPZ / toPLen;
+
+            const toCX = w.x - npc.x;
+            const toCZ = w.z - npc.z;
+            const toCLen = Math.hypot(toCX, toCZ) || 1;
+            const cX = toCX / toCLen;
+            const cZ = toCZ / toCLen;
+
+            const dot = cX * tX + cZ * tZ;
+            if (dot > 0.1) continue;
+
+            candidates.push({
+                cell,
+                distToPlayer,
+                distToNpc,
+                dot,
+                score: distToPlayer - distToNpc * 0.3 - dot * distToPlayer * 0.5
+            });
+        }
+
+        if (candidates.length === 0) {
+            for (let i = 0; i < roadCells.length; i += 10) {
+                const cell = roadCells[i];
+                const w = worldFromCell(cell.cx, cell.cy);
+                const d = Math.hypot(player.x - w.x, player.z - w.z);
+                candidates.push({ cell, distToPlayer: d, distToNpc: 0, dot: 0, score: d });
+            }
+        }
+
+        candidates.sort((a, b) => b.score - a.score);
+
+        const picked = [];
+        for (const cand of candidates) {
+            if (picked.length >= 3) break;
+            let diverse = true;
+            for (const p of picked) {
+                const dx1 = cand.cell.cx - c.cx;
+                const dy1 = cand.cell.cy - c.cy;
+                const dx2 = p.cell.cx - c.cx;
+                const dy2 = p.cell.cy - c.cy;
+                const len1 = Math.hypot(dx1, dy1) || 1;
+                const len2 = Math.hypot(dx2, dy2) || 1;
+                const dot = (dx1 * dx2 + dy1 * dy2) / (len1 * len2);
+                if (dot > 0.7) { diverse = false; break; }
+            }
+            if (diverse) picked.push(cand);
+        }
+
+        for (const cand of candidates) {
+            if (picked.length >= 3) break;
+            if (!picked.includes(cand)) picked.push(cand);
+        }
+
+        npc.safeSpots = picked;
+        npc.safeSpotsTimer = SAFE_SPOTS_INTERVAL;
+
+        // Сбрасываем старый escape path, если он вёл к несуществующему spot
+        if (picked.length > 0) {
+            npc.escapeGoalCell = null;
+            npc.escapePath = null;
+            npc.escapePathIndex = 0;
+        }
+    }
+
+// ============================================================
+// ==================== БЛОК 4: ЛОГИКА NPC ====================
+// ============================================================
+// Содержит: создание NPC-объектов (данные), состояния wander/flee/hiding,
+// updateNpcs, applyVisuals. Здесь вся логика поведения.
+// ИЗМЕНЕНИЯ: защита от undefined, ограничение пересчёта, 
+// нормализация индексов, не сбрасывать safeSpots без нужды.
+
+    const npcs = [];
+
+    function createNpcData(def) {
+        const pos = randomRoadWorld();
+        return {
+            typeId: def.id,
+            name: def.name,
+            def: def,
+            x: pos.x, z: pos.z,
+            prevX: pos.x, prevZ: pos.z,
+            angle: 0,
+            desiredAngle: 0,
+            walkPhase: 0,
+            baseSpeed: PLAYER_REF_SPEED * def.speedMult * (0.95 + Math.random() * 0.1),
+
+            // состояния
+            state: 'wander',
+            stateTimer: 0,
+
+            // wander
+            goalCell: null,
+            path: null,
+            pathIndex: 0,
+
+            // flee
+            escapeGoalCell: null,
+            escapePath: null,
+            escapePathIndex: 0,
+            safeSpots: [],
+            safeSpotsTimer: 0,
+            escapeRepickTimer: 0,   // ограничитель частоты пересчёта
+
+            // дом
+            targetHouse: null,
+            houseCooldownTimer: 0,
+            lastHouseId: -1,
+
+            // hiding
+            hideTimer: 0,
+            enteredHouseAt: 0,
+
+            // угроза
+            isPursued: false,
+            pursueTimer: 0,
+
+            // память об игроке
+            lastPlayerDist: Infinity,
+            playerDistance: Infinity,
+            playerApproaching: false,
+
+            // таймеры
+            boostTimer: 0,
+            recoverTimer: 0,
+            exitGraceTimer: 0,
+
+            caught: false
+        };
+    }
+
+    // Создаём NPC: модель + данные
+    const typeList = [
+        ...Array(NPC_COUNTS.dragon).fill("dragon"),
+        ...Array(NPC_COUNTS.fox).fill("fox"),
+        ...Array(NPC_COUNTS.cat).fill("cat")
+    ];
+
+    for (const t of typeList) {
+        const def = NPC_DEFS[t];
+        const model = createNpcModel(def);
+        const npc = createNpcData(def);
+        npc.root = model.root;
+        npc.lift = model.lift;
+        npc.legBack = model.legBack;
+        npc.legFront = model.legFront;
+        npc.tail = model.tail;
+        npc.head = model.head;
+        npc.earL = model.earL;
+        npc.earR = model.earR;
+        npc.alertGlow = model.alertGlow;
+        npc.collisionRadius = model.collisionRadius;
+
+        npc.root.position.set(npc.x, 0, npc.z);
+        npc.root.rotation.y = npc.angle;
+        npcs.push(npc);
+    }
+
+    function updatePlayerMemory(npc, dt) {
+        const dx = player.x - npc.x;
+        const dz = player.z - npc.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+
+        if (player._prevX !== undefined) {
+            const playerMovedX = player.x - player._prevX;
+            const playerMovedZ = player.z - player._prevZ;
+            const playerMoved = Math.hypot(playerMovedX, playerMovedZ);
+            if (playerMoved > 0.01) {
+                npc.playerApproaching = dist < npc.lastPlayerDist - 0.05;
+            } else {
+                npc.playerApproaching = false;
+            }
+        } else {
+            npc.playerApproaching = false;
+        }
+
+        npc.lastPlayerDist = dist;
+        npc.playerDistance = dist;
+    }
+
+    function updatePursuit(npc, dt) {
+        const ENTER_DIST = SENSE_RADIUS * npc.def.senseMult;
+        const EXIT_DIST  = ENTER_DIST * 2.0;
+
+        const sees = hasLineOfSight(npc.x, npc.z, player.x, player.z,
+                                    SIGHT_RANGE * npc.def.sightMult);
+        const dist = npc.playerDistance;
+
+        if (!npc.isPursued) {
+            if (npc.playerApproaching || dist < ENTER_DIST || sees) {
+                npc.isPursued = true;
+                npc.pursueTimer = 0;
+            }
+        } else {
+            if (dist > EXIT_DIST && !sees && !npc.playerApproaching) {
+                npc.pursueTimer += dt;
+                if (npc.pursueTimer > 1.2) {
+                    npc.isPursued = false;
+                    npc.pursueTimer = 0;
+                }
+            } else {
+                npc.pursueTimer = 0;
+            }
+        }
+    }
+
+    // ==================== ВЫБОР ДОМА ====================
+    function evaluateHouseSafety(h, npc) {
+        if (!h || h.floors !== 1) return Infinity;
+        if (h.occupiedBy && h.occupiedBy !== npc) return Infinity;
+        const doorCell = getHouseDoorCell(h);
+        if (!doorCell) return Infinity;
+
+        const c = cellFromWorld(npc.x, npc.z);
+        const path = findPathBFS(c.cx, c.cy, doorCell.cx, doorCell.cy);
+        if (!path || path.length === 0) return Infinity;
+
+        let minDist = Infinity;
+        for (const cell of path) {
+            const w = worldFromCell(cell.cx, cell.cy);
+            const d = Math.hypot(player.x - w.x, player.z - w.z);
+            if (d < minDist) minDist = d;
+        }
+
+        if (minDist < PANIC_RADIUS) return Infinity;
+
+        const dw = worldFromCell(doorCell.cx, doorCell.cy);
+        const toHouseX = dw.x - npc.x;
+        const toHouseZ = dw.z - npc.z;
+        const toHouseLen = Math.hypot(toHouseX, toHouseZ) || 1;
+
+        const toPX = player.x - npc.x;
+        const toPZ = player.z - npc.z;
+        const toPLen = Math.hypot(toPX, toPZ) || 1;
+
+        const dot = (toHouseX / toHouseLen) * (toPX / toPLen) +
+                    (toHouseZ / toHouseLen) * (toPZ / toPLen);
+
+        if (dot > 0.2) return Infinity;
+
+        return path.length;
+    }
+
+    function chooseBestFleeHouse(npc) {
+        const candidates = houses.filter(h => h.floors === 1);
+        let best = null;
+        let bestScore = Infinity;
+
+        for (const h of candidates) {
+            if (npc.houseCooldownTimer > 0 && h.id === npc.lastHouseId) continue;
+
+            const s = evaluateHouseSafety(h, npc);
+            if (s < bestScore) {
+                bestScore = s;
+                best = h;
+            }
+        }
+
+        if (!best || bestScore === Infinity) return null;
+
+        const c = cellFromWorld(npc.x, npc.z);
+        const doorCell = getHouseDoorCell(best);
+        if (!doorCell) return null;
+        const path = findPathBFS(c.cx, c.cy, doorCell.cx, doorCell.cy);
+        if (!path || path.length === 0) return null;
+
+        return { house: best, path: path };
+    }
+
+    function npcEnterHouse(npc) {
+        const h = npc.targetHouse;
+        if (!h) { npc.state = 'wander'; return; }
+        if (h.occupiedBy && h.occupiedBy !== npc) {
+            npc.targetHouse = null;
+            npc.state = 'wander';
+            return;
+        }
+
+        npc.state = 'hiding';
+        npc.hideTimer = 0;
+        npc.enteredHouseAt = performance.now() / 1000;
+        npc.root.visible = false;
+        const w = worldFromCell(h.cx, h.cy);
+        npc.x = w.x;
+        npc.z = w.z;
+        npc.root.position.set(npc.x, 0, npc.z);
+
+        h.occupiedBy = npc;
+        if (h.doorMesh) h.doorMesh.material = doorMatOccupied;
+
+        if (npc.recoverTimer <= 0 && npc.boostTimer <= 0) {
+            npc.boostTimer = npc.def.hideTime;
+        }
+
+        npc.houseCooldownTimer = 0;
+        npc.lastHouseId = h.id;
+    }
+
+    function npcExitHouse(npc) {
+        const h = npc.targetHouse;
+        if (!h) {
+            npc.state = 'wander';
+            npc.root.visible = true;
+            return;
+        }
+        const doorCell = getHouseDoorCell(h);
+        if (doorCell) {
+            const w = worldFromCell(doorCell.cx, doorCell.cy);
+            npc.x = w.x;
+            npc.z = w.z;
+            npc.root.position.set(npc.x, 0, npc.z);
+        }
+        if (h.occupiedBy === npc) {
+            h.occupiedBy = null;
+            if (h.doorMesh) h.doorMesh.material = doorMat;
+        }
+        npc.root.visible = true;
+        npc.state = 'wander';
+        npc.stateTimer = 0;
+        npc.targetHouse = null;
+        npc.path = null;
+        npc.escapeGoalCell = null;
+        npc.escapePath = null;
+        npc.escapePathIndex = 0;
+        npc.exitGraceTimer = 1.5;
+
+        npc.houseCooldownTimer = 8.0;
+        npc.lastHouseId = h.id;
+    }
+
+    // ==================== HIDING ====================
+    function hidingStep(npc, dt) {
+        npc.hideTimer += dt;
+        const h = npc.targetHouse;
+        if (!h) {
+            npc.state = 'wander';
+            npc.root.visible = true;
+            return;
+        }
+        const hw = worldFromCell(h.cx, h.cy);
+        const dx = player.x - hw.x;
+        const dz = player.z - hw.z;
+        const distCells = Math.sqrt(dx * dx + dz * dz) / CELL;
+
+        const now = performance.now() / 1000;
+        const timeInHouse = now - npc.enteredHouseAt;
+
+        const playerFar = distCells >= 4.0;
+        const playerLeaving = !npc.playerApproaching;
+        const minTimePassed = timeInHouse >= 3.0;
+        const hideTimePassed = npc.hideTimer >= npc.def.hideTime;
+
+        if (playerFar && playerLeaving && minTimePassed && hideTimePassed) {
+            npcExitHouse(npc);
+        }
+    }
+
+    // ==================== WANDER ====================
+    function pickNewGoal(npc) {
+        const curCell = cellFromWorld(npc.x, npc.z);
+        const MIN_DIST = Math.floor(CITY_SIZE * 0.4);
+        const MAX_TRIES = 30;
+        for (let i = 0; i < MAX_TRIES; i++) {
+            const cell = roadCells[Math.floor(Math.random() * roadCells.length)];
+            const dist = Math.abs(cell.cx - curCell.cx) + Math.abs(cell.cy - curCell.cy);
+            if (dist >= MIN_DIST) {
+                npc.goalCell = cell;
+                return;
+            }
+        }
+        npc.goalCell = roadCells[Math.floor(Math.random() * roadCells.length)];
+    }
+
+    function wanderStep(npc, dt, speed) {
+        const c = cellFromWorld(npc.x, npc.z);
+
+        if (!npc.goalCell) pickNewGoal(npc);
+        if (!npc.goalCell) return;
+
+        if (!npc.path || npc.pathIndex >= npc.path.length) {
+            const path = findPathBFS(c.cx, c.cy, npc.goalCell.cx, npc.goalCell.cy);
+            if (path && path.length > 1) {
+                npc.path = path;
+                npc.pathIndex = 1;
+            } else {
+                npc.goalCell = null;
+                npc.path = null;
+                return;
+            }
+        }
+
+        if (!npc.path || npc.pathIndex >= npc.path.length) return;
+
+        const target = npc.path[npc.pathIndex];
+        if (!target) {
+            npc.path = null;
+            return;
+        }
+
+        if (target.cx === c.cx && target.cy === c.cy) {
+            npc.pathIndex++;
+            if (npc.pathIndex >= npc.path.length) {
+                npc.goalCell = null;
+                npc.path = null;
+            }
+            return;
+        }
+
+        const dk = dirFromCells(c.cx, c.cy, target.cx, target.cy);
+        if (!dk) {
+            npc.path = null;
+            return;
+        }
+
+        const res = moveInDirection(npc, dk, dt, speed);
+        if (res === 'reached') {
+            npc.pathIndex++;
+            if (npc.pathIndex >= npc.path.length) {
+                npc.goalCell = null;
+                npc.path = null;
+            }
+        } else if (res === 'blocked') {
+            npc.path = null;
+        }
+    }
+
+    // ==================== FLEE ====================
+    function pickBestEscapeGoal(npc) {
+        // Если safe spots нет — считаем (но не чаще, чем раз в SAFE_SPOTS_INTERVAL)
+        if (npc.safeSpots.length === 0) {
+            computeSafeSpots(npc);
+        }
+        if (npc.safeSpots.length === 0) return null;
+
+        const c = cellFromWorld(npc.x, npc.z);
+        let best = null;
+        let bestScore = Infinity;
+
+        for (const spot of npc.safeSpots) {
+            if (!spot || !spot.cell) continue;
+            const path = findPathBFS(c.cx, c.cy, spot.cell.cx, spot.cell.cy);
+            if (!path || path.length === 0) continue;
+
+            let minDistToPlayer = Infinity;
+            for (const cell of path) {
+                const w = worldFromCell(cell.cx, cell.cy);
+                const d = Math.hypot(player.x - w.x, player.z - w.z);
+                if (d < minDistToPlayer) minDistToPlayer = d;
+            }
+
+            let penalty = 0;
+            if (minDistToPlayer < PANIC_RADIUS) {
+                penalty += (PANIC_RADIUS - minDistToPlayer) * 100;
+            }
+
+            const score = path.length + penalty;
+            if (score < bestScore) {
+                bestScore = score;
+                best = { cell: spot.cell, path };
+            }
+        }
+
+        return best;
+    }
+
+    function fleeStep(npc, dt, speed) {
+        // 1) Если есть цель-дом — идём к двери
+        if (npc.targetHouse && npc.houseCooldownTimer <= 0) {
+            const doorCell = getHouseDoorCell(npc.targetHouse);
+            if (doorCell) {
+                const c = cellFromWorld(npc.x, npc.z);
+                if (c.cx === doorCell.cx && c.cy === doorCell.cy) {
+                    npcEnterHouse(npc);
+                    return;
+                }
+                if (!npc.path || npc.pathIndex >= npc.path.length) {
+                    const p = findPathBFS(c.cx, c.cy, doorCell.cx, doorCell.cy);
+                    if (p && p.length > 1) {
+                        npc.path = p;
+                        npc.pathIndex = 1;
+                    } else {
+                        npc.targetHouse = null;
+                        npc.path = null;
+                    }
+                }
+                if (npc.path && npc.pathIndex < npc.path.length) {
+                    const target = npc.path[npc.pathIndex];
+                    if (target && target.cx === c.cx && target.cy === c.cy) {
+                        npc.pathIndex++;
+                    } else if (target) {
+                        const dk = dirFromCells(c.cx, c.cy, target.cx, target.cy);
+                        if (dk) {
+                            const res = moveInDirection(npc, dk, dt, speed);
+                            if (res === 'reached') npc.pathIndex++;
+                            else if (res === 'blocked') npc.path = null;
+                            return;
+                        } else {
+                            npc.path = null;
+                        }
+                    } else {
+                        npc.path = null;
+                    }
+                }
+            } else {
+                npc.targetHouse = null;
+            }
+        }
+
+        // 2) Нет дома — идём к safe spot
+        npc.safeSpotsTimer -= dt;
+        npc.escapeRepickTimer -= dt;
+
+        // Пересчёт safe spots только по таймеру
+        if (npc.safeSpotsTimer <= 0) {
+            computeSafeSpots(npc);
+            if (npc.safeSpots.length === 0) {
+                // Не можем найти safe spots — стоим, не метаемся
+                return;
+            }
+        }
+
+        // Проверяем валидность текущего escape path
+        let needRepick = false;
+        if (!npc.escapeGoalCell || !npc.escapePath) {
+            needRepick = true;
+        } else if (npc.escapePathIndex >= npc.escapePath.length) {
+            // Дошли до конца пути — цель достигнута, ищем новую
+            needRepick = true;
+        } else if (!npc.escapePath[npc.escapePathIndex]) {
+            // Битый индекс — пересчёт
+            needRepick = true;
+        }
+
+        // Не пересчитываем слишком часто
+        if (needRepick && npc.escapeRepickTimer > 0) {
+            // Ждём, пока таймер истечёт
+            return;
+        }
+
+        if (needRepick) {
+            const best = pickBestEscapeGoal(npc);
+            if (best) {
+                npc.escapeGoalCell = best.cell;
+                npc.escapePath = best.path;
+                npc.escapePathIndex = 1;
+                npc.escapeRepickTimer = ESCAPE_REPICK_INTERVAL;
+                const c = cellFromWorld(npc.x, npc.z);
+                if (best.path.length > 1) {
+                    const next = best.path[1];
+                    const dk = dirFromCells(c.cx, c.cy, next.cx, next.cy);
+                    if (dk) npc.desiredAngle = DIRS[dk].angle;
+                }
+            } else {
+                npc.escapeGoalCell = null;
+                npc.escapePath = null;
+                npc.escapePathIndex = 0;
+                npc.escapeRepickTimer = ESCAPE_REPICK_INTERVAL;
+                return;
+            }
+        }
+
+        // Финальная проверка на undefined
+        if (!npc.escapePath || npc.escapePathIndex >= npc.escapePath.length) {
+            npc.escapeGoalCell = null;
+            npc.escapePath = null;
+            npc.escapePathIndex = 0;
+            return;
+        }
+
+        const c = cellFromWorld(npc.x, npc.z);
+        const target = npc.escapePath[npc.escapePathIndex];
+
+        if (!target) {
+            npc.escapeGoalCell = null;
+            npc.escapePath = null;
+            npc.escapePathIndex = 0;
+            return;
+        }
+
+        if (target.cx === c.cx && target.cy === c.cy) {
+            npc.escapePathIndex++;
+            if (npc.escapePathIndex >= npc.escapePath.length) {
+                npc.escapeGoalCell = null;
+                npc.escapePath = null;
+                npc.escapePathIndex = 0;
+            }
+            return;
+        }
+
+        const dk = dirFromCells(c.cx, c.cy, target.cx, target.cy);
+        if (!dk) {
+            npc.escapePath = null;
+            npc.escapeGoalCell = null;
+            npc.escapePathIndex = 0;
+            return;
+        }
+
+        if (!isDirectionAllowed(npc, dk)) {
+            // Направление в сторону игрока — ищем другой safe spot
+            npc.escapePath = null;
+            npc.escapeGoalCell = null;
+            npc.escapePathIndex = 0;
+            // Не пересчитываем safe spots здесь — только по таймеру
+            npc.escapeRepickTimer = ESCAPE_REPICK_INTERVAL;
+            return;
+        }
+
+        const res = moveInDirection(npc, dk, dt, speed);
+        if (res === 'reached') {
+            npc.escapePathIndex++;
+            if (npc.escapePathIndex >= npc.escapePath.length) {
+                npc.escapeGoalCell = null;
+                npc.escapePath = null;
+                npc.escapePathIndex = 0;
+            }
+        } else if (res === 'blocked') {
+            npc.escapePath = null;
+            npc.escapeGoalCell = null;
+            npc.escapePathIndex = 0;
+        }
+    }
+
+    // ==================== ВИЗУАЛИЗАЦИЯ NPC ====================
+    function applyVisuals(npc, dt) {
+        const diff = angleDelta(npc.desiredAngle, npc.angle);
+        const maxTurn = 5.0 * dt;
+        if (Math.abs(diff) > maxTurn) {
+            npc.angle = normalizeAngle(npc.angle + Math.sign(diff) * maxTurn);
+        } else {
+            npc.angle = normalizeAngle(npc.angle + diff);
+        }
+
+        npc.root.position.set(npc.x, 0, npc.z);
+        npc.root.rotation.y = npc.angle;
+
+        const movedDist = Math.hypot(npc.x - npc.prevX, npc.z - npc.prevZ);
+        if (movedDist > 0.01) {
+            npc.walkPhase += dt * 11;
+        } else {
+            npc.walkPhase *= 0.85;
+        }
+
+        const s = Math.sin(npc.walkPhase);
+        const bounce = Math.abs(s) * 0.045;
+        npc.lift.position.y = 79 * S + bounce;
+        npc.legBack.position.z  =  s * 0.10;
+        npc.legFront.position.z = -s * 0.10;
+        npc.earL.rotation.z =  Math.sin(npc.walkPhase * 0.8) * 0.11;
+        npc.earR.rotation.z = -Math.sin(npc.walkPhase * 0.8) * 0.11;
+        npc.tail.rotation.y = Math.sin(npc.walkPhase * 0.9) * 0.22;
+    }
+
+    // ==================== ГЛАВНЫЙ АПДЕЙТ NPC ====================
+    function updateNpcs(dt) {
+        for (const npc of npcs) {
+            if (npc.caught) continue;
+
+            npc.prevX = npc.x;
+            npc.prevZ = npc.z;
+
+            updatePlayerMemory(npc, dt);
+            updatePursuit(npc, dt);
+
+            // Таймеры
+            if (npc.boostTimer > 0) {
+                npc.boostTimer -= dt;
+                if (npc.boostTimer <= 0) {
+                    npc.boostTimer = 0;
+                    npc.recoverTimer = npc.def.recoverTime;
+                }
+            } else if (npc.recoverTimer > 0) {
+                npc.recoverTimer -= dt;
+                if (npc.recoverTimer < 0) npc.recoverTimer = 0;
+            }
+            if (npc.exitGraceTimer > 0) {
+                npc.exitGraceTimer -= dt;
+                if (npc.exitGraceTimer < 0) npc.exitGraceTimer = 0;
+            }
+            if (npc.houseCooldownTimer > 0) {
+                npc.houseCooldownTimer -= dt;
+                if (npc.houseCooldownTimer < 0) npc.houseCooldownTimer = 0;
+            }
+
+            const speed = npc.baseSpeed * (npc.boostTimer > 0 ? npc.def.boostMult : 1);
+
+            npc.stateTimer += dt;
+            npc.safeSpotsTimer -= dt;
+            npc.escapeRepickTimer -= dt;
+
+            const threat = npc.exitGraceTimer <= 0 && npc.isPursued;
+
+            // ==================== HIDING ====================
+            if (npc.state === 'hiding') {
+                npc.alertGlow.visible = true;
+                hidingStep(npc, dt);
+                npc.root.position.set(npc.x, 0, npc.z);
+                npc.root.rotation.y = npc.angle;
+                continue;
+            }
+
+            // ==================== FLEE ====================
+            if (npc.state === 'flee') {
+                npc.alertGlow.visible = true;
+
+                if (npc.stateTimer >= 0.5 && !threat) {
+                    npc.state = 'wander';
+                    npc.stateTimer = 0;
+                    npc.targetHouse = null;
+                    npc.path = null;
+                    npc.escapeGoalCell = null;
+                    npc.escapePath = null;
+                    npc.escapePathIndex = 0;
+                } else {
+                    fleeStep(npc, dt, speed);
+                    applyVisuals(npc, dt);
+                    continue;
+                }
+            }
+
+            // ==================== WANDER ====================
+            if (npc.state === 'wander') {
+                npc.alertGlow.visible = false;
+
+                if (npc.stateTimer >= 0.5 && threat) {
+                    const alt = chooseBestFleeHouse(npc);
+                    npc.state = 'flee';
+                    npc.stateTimer = 0;
+                    if (alt) {
+                        npc.targetHouse = alt.house;
+                        npc.path = alt.path;
+                        npc.pathIndex = 1;
+                    } else {
+                        npc.targetHouse = null;
+                        npc.path = null;
+                    }
+                    // НЕ сбрасываем safeSpots в null — только помечаем, что надо пересчитать
+                    npc.safeSpotsTimer = 0;
+                    npc.escapeGoalCell = null;
+                    npc.escapePath = null;
+                    npc.escapePathIndex = 0;
+                    npc.escapeRepickTimer = 0;
+                    fleeStep(npc, dt, speed);
+                    applyVisuals(npc, dt);
+                    continue;
+                }
+
+                wanderStep(npc, dt, speed);
+                applyVisuals(npc, dt);
+                continue;
+            }
+
+            // fallback
+            npc.state = 'wander';
+            npc.stateTimer = 0;
+        }
+    }
+
+    // ============================================================
+    // ==================== БЛОК 5: ИГРОК ====================
+    // ============================================================
+    // Содержит: игровое время, энергию, ввод, камеру, физику,
+    // ловлю NPC, миникарту, главный цикл.
+
+    const GAME_DURATION = 330;
+    const CATCH_BONUS = 12;
+    let timeLeft = GAME_DURATION;
+    let caughtCount = 0;
+    let gameActive = true;
+
+    const timerText = document.getElementById("timerText");
+    const catchCountEl = document.getElementById("catchCount");
+    const gameOverEl = document.getElementById("gameOver");
+    const gameOverTitle = document.getElementById("gameOverTitle");
+    const gameOverText = document.getElementById("gameOverText");
+    const restartBtn = document.getElementById("restartBtn");
+
+    function formatTime(sec) {
+        const s = Math.max(0, Math.ceil(sec));
+        const m = Math.floor(s / 60);
+        const r = s % 60;
+        return String(m).padStart(2, "0") + ":" + String(r).padStart(2, "0");
+    }
+
+    function updateTimerUI() {
+        timerText.textContent = formatTime(timeLeft);
+        if (timeLeft < 60) timerText.classList.add("low");
+        else timerText.classList.remove("low");
+        catchCountEl.textContent = caughtCount + " / " + TOTAL_NPC;
+    }
+
+    function endGame(win) {
+        gameActive = false;
+        gameOverTitle.textContent = win ? "Все пойманы!" : "Время вышло";
+        gameOverText.textContent = "Поймано: " + caughtCount + " из " + TOTAL_NPC;
+        gameOverEl.classList.add("show");
+    }
+
+    restartBtn.addEventListener("click", () => {
+        window.location.reload();
+    });
+
+    const MAX_RUN_TIME = 5;
+    const RECOVER_TIME = 10;
+    let runEnergy = MAX_RUN_TIME;
+    let isTired = false;
+
+    // ==================== СПАВН ИГРОКА ====================
+    function findSpawnOnRoad() {
+        const center = Math.floor(CITY_SIZE / 2);
+        for (let radius = 0; radius < CITY_SIZE; radius++) {
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    if (Math.abs(dx) !== radius && Math.abs(dy) !== radius && radius > 0) continue;
+                    const cx = center + dx;
+                    const cy = center + dy;
+                    if (cx < 0 || cx >= CITY_SIZE || cy < 0 || cy >= CITY_SIZE) continue;
+                    if (cityMap[cy][cx] === 0) {
+                        const w = worldFromCell(cx, cy);
+                        return { x: w.x, z: w.z };
+                    }
+                }
+            }
+        }
+        return { x: 0, z: 0 };
+    }
+
+    const spawn = findSpawnOnRoad();
+
+    const player = {
+        x: spawn.x, z: spawn.z, y: 0,
+        angle: 0,
+        speed: PLAYER_REF_SPEED,
+        runMultiplier: 1.85,
+        walkPhase: 0,
+        moving: false,
+        stepping: false,
+        vy: 0,
+        grounded: true,
+        restCamAngle: Math.PI,
+        _prevX: spawn.x,
+        _prevZ: spawn.z
+    };
+
+    const JUMP_FORCE = 9.5;
+    const GRAVITY = 22;
+    const JUMP_CLEAR_Y = 0.55;
+
+    const cameraOrbit = {
+        angle: 0, targetAngle: 0,
+        height: 6.5, distance: 9,
+        distanceMin: 9, distanceMax: 90
+    };
+
+    const CAMERA_FOLLOW_SPEED  = 1.4;
+    const PLAYER_TURN_SPEED    = 10;
+    const CAMERA_MANUAL_SPEED  = 1.8;
+    const PLAYER_TURN_MULT     = 0.166;
+    const HEAD_TURN_FORWARD_DEG       = 25;
+    const HEAD_TURN_BACK_STRAIGHT_DEG = 9;
+    const HEAD_TURN_BACK_TURNING_DEG  = 27;
+
+    const zoomSlider = document.getElementById("zoomSlider");
+    let zoomLevel = 0.5;
+
+    function applyZoom() {
+        cameraOrbit.distance = cameraOrbit.distanceMin +
+            (cameraOrbit.distanceMax - cameraOrbit.distanceMin) * (1 - zoomLevel);
+        cameraOrbit.height = 6.5 + (1 - zoomLevel) * 22;
+    }
+
+    zoomSlider.addEventListener("input", () => {
+        zoomLevel = parseInt(zoomSlider.value, 10) / 100;
+        applyZoom();
+    });
+
+    window.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        zoomLevel = Math.max(0, Math.min(1, zoomLevel - e.deltaY * 0.0008));
+        zoomSlider.value = zoomLevel * 100;
+        applyZoom();
+    }, { passive: false });
+
+    applyZoom();
+
+    function isWalkable(worldX, worldZ, airborne) {
+        const cx = Math.floor(worldX / CELL + CITY_SIZE / 2);
+        const cy = Math.floor(worldZ / CELL + CITY_SIZE / 2);
+        if (cx < 0 || cx >= CITY_SIZE || cy < 0 || cy >= CITY_SIZE) return false;
+        if (airborne) return true;
+        return cityMap[cy][cx] !== 1;
+    }
+
+    const keys = Object.create(null);
+    const gameKeys = new Set([
+        "w","a","s","d","q","e","n",
+        "ц","ф","ы","в","й","у","т",
+        "arrowup","arrowdown","arrowleft","arrowright",
+        " ",
+        "-", "_", "=", "+", "[", "]"
+    ]);
+
+    const HOLD_TO_STICK = 0.5;
+    const STICK_RELEASE = 0.25;
+    const TAP_THRESHOLD = 0.5;
+
+    const stick = {
+        forward: { active: false, holdTime: 0, wasDown: false, running: false, releaseTimer: 0 },
+        backward: { active: false, holdTime: 0, wasDown: false, running: false, releaseTimer: 0 },
+        _pendingStop: null,
+        _frozenCamAngle: null
+    };
+
+    function resetStick(s) {
+        s.active = false;
+        s.holdTime = 0;
+        s.running = false;
+        s.releaseTimer = 0;
+        s.wasDown = false;
+    }
+
+    window.addEventListener("keydown", (e) => {
+        const k = e.key.toLowerCase();
+        if (gameKeys.has(k)) e.preventDefault();
+        if (keys[k]) return;
+        keys[k] = true;
+
+        if (k === "-" || k === "_" || k === "[") {
+            zoomLevel = Math.max(0, zoomLevel - 0.08);
+            zoomSlider.value = zoomLevel * 100;
+            applyZoom();
+        } else if (k === "=" || k === "+" || k === "]") {
+            zoomLevel = Math.min(1, zoomLevel + 0.08);
+            zoomSlider.value = zoomLevel * 100;
+            applyZoom();
+        } else if (k === "n" || k === "т") {
+            isNight = !isNight;
+            applyTimeOfDay();
+        } else if (k === " ") {
+            if (player.grounded) {
+                player.vy = JUMP_FORCE;
+                player.grounded = false;
+            }
+        }
+    });
+
+    window.addEventListener("keyup", (e) => {
+        const k = e.key.toLowerCase();
+        keys[k] = false;
+    });
+
+    window.addEventListener("blur", () => {
+        for (const k in keys) keys[k] = false;
+    });
+
+    // ==================== ПРОВЕРКА КАСАНИЯ ====================
+    function checkCatch() {
+        if (!gameActive) return;
+        for (const npc of npcs) {
+            if (npc.caught) continue;
+            if (npc.state === 'hiding') continue;
+            if (npc.exitGraceTimer > 0) continue;
+            const dx = player.x - npc.x;
+            const dz = player.z - npc.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            const catchDist = PLAYER_COLLISION_RADIUS + npc.collisionRadius + 0.3;
+            if (dist < catchDist) {
+                npc.caught = true;
+                npc.root.visible = false;
+
+                if (npc.targetHouse && npc.targetHouse.occupiedBy === npc) {
+                    npc.targetHouse.occupiedBy = null;
+                    if (npc.targetHouse.doorMesh) {
+                        npc.targetHouse.doorMesh.material = doorMat;
+                    }
+                }
+
+                caughtCount++;
+                let bonus = CATCH_BONUS;
+                if (npc.typeId === 'fox') bonus = Math.round(CATCH_BONUS * 1.6);
+                else if (npc.typeId === 'cat') bonus = Math.round(CATCH_BONUS * 1.3);
+                timeLeft += bonus;
+                updateTimerUI();
+                if (caughtCount >= TOTAL_NPC) {
+                    endGame(true);
+                }
+            }
+        }
+    }
+
+    // ==================== МОБИЛЬНОЕ УПРАВЛЕНИЕ ====================
+    (function setupMobile() {
+        const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+        if (!isTouch) return;
+
+        document.body.classList.add('mobile');
+
+        function bindKey(el) {
+            const key = el.dataset.key;
+
+            const press = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                el.classList.add('pressed');
+                if (key === " ") {
+                    if (player.grounded) {
+                        player.vy = JUMP_FORCE;
+                        player.grounded = false;
+                    }
+                    keys[" "] = true;
+                } else {
+                    keys[key] = true;
+                }
+            };
+
+            const release = (e) => {
+                if (e) { e.preventDefault(); e.stopPropagation(); }
+                el.classList.remove('pressed');
+                keys[key] = false;
+            };
+
+            el.addEventListener('pointerdown', press);
+            el.addEventListener('pointerup', release);
+            el.addEventListener('pointercancel', release);
+            el.addEventListener('pointerleave', release);
+            el.addEventListener('contextmenu', (e) => e.preventDefault());
+        }
+
+        document.querySelectorAll('.dbtn, .abtn').forEach(bindKey);
+    })();
+
+    // ==================== МИНИКАРТА ====================
+    const mmCanvas = document.getElementById("minimapCanvas");
+    const mmCtx = mmCanvas.getContext("2d");
+    const MM_SIZE = 160;
+    const halfWorld = WORLD_EXTENT / 2;
+
+    function worldToMinimap(wx, wz) {
+        const u = (wx + halfWorld) / WORLD_EXTENT;
+        const v = (wz + halfWorld) / WORLD_EXTENT;
+        return { x: u * MM_SIZE, y: v * MM_SIZE };
+    }
+
+    function drawMinimap() {
+        mmCtx.fillStyle = "#0a1210";
+        mmCtx.fillRect(0, 0, MM_SIZE, MM_SIZE);
+
+        mmCtx.fillStyle = "#1a2a22";
+        for (let cy = 0; cy < CITY_SIZE; cy++) {
+            for (let cx = 0; cx < CITY_SIZE; cx++) {
+                if (cityMap[cy][cx] !== 0) continue;
+                const w = worldFromCell(cx, cy);
+                const p = worldToMinimap(w.x, w.z);
+                const cellPx = MM_SIZE / CITY_SIZE;
+                mmCtx.fillRect(p.x - cellPx * 0.5, p.y - cellPx * 0.5, cellPx + 0.5, cellPx + 0.5);
+            }
+        }
+
+        for (const h of houses) {
+            const w = worldFromCell(h.cx, h.cy);
+            const p = worldToMinimap(w.x, w.z);
+            const cellPx = MM_SIZE / CITY_SIZE;
+            mmCtx.fillStyle = h.floors === 1 ? "#3a5a7a" : "#2a3a4a";
+            mmCtx.fillRect(p.x - cellPx * 0.5, p.y - cellPx * 0.5, cellPx, cellPx);
+        }
+
+        for (const npc of npcs) {
+            if (npc.caught) continue;
+            const p = worldToMinimap(npc.x, npc.z);
+            if (npc.state === 'hiding') {
+                mmCtx.fillStyle = "#ff3a3a";
+            } else if (npc.state === 'flee') {
+                mmCtx.fillStyle = "#ffd76b";
+            } else {
+                if (npc.typeId === "dragon") mmCtx.fillStyle = "#5ac88a";
+                else if (npc.typeId === "fox") mmCtx.fillStyle = "#ff8a3a";
+                else mmCtx.fillStyle = "#9a8aa8";
+            }
+            mmCtx.beginPath();
+            mmCtx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+            mmCtx.fill();
+        }
+
+        const pp = worldToMinimap(player.x, player.z);
+        mmCtx.fillStyle = "#6bffb8";
+        mmCtx.beginPath();
+        mmCtx.arc(pp.x, pp.y, 3.2, 0, Math.PI * 2);
+        mmCtx.fill();
+        mmCtx.strokeStyle = "#b6ffe0";
+        mmCtx.lineWidth = 1.5;
+        mmCtx.beginPath();
+        mmCtx.moveTo(pp.x, pp.y);
+        mmCtx.lineTo(
+            pp.x + Math.sin(player.angle) * 7,
+            pp.y + Math.cos(player.angle) * 7
+        );
+        mmCtx.stroke();
+    }
+
+    // ==================== ОСНОВНОЙ ЦИКЛ ====================
+    let lastTime = performance.now();
+
+    function updateStickState(s, isDown, dt) {
+        if (isDown) {
+            s.releaseTimer = 0;
+            if (!s.wasDown) {
+                if (s.active) {
+                    s.running = !s.running;
+                }
+                s.holdTime = 0;
+            }
+            s.holdTime += dt;
+            if (!s.active && !s.running && s.holdTime >= HOLD_TO_STICK) {
+                s.active = true;
+            }
+        } else {
+            s.releaseTimer += dt;
+            if (s.releaseTimer > STICK_RELEASE) {
+                s.holdTime = 0;
+            }
+        }
+        s.wasDown = isDown;
+    }
+
+    function update(dt) {
+        if (!gameActive) return;
+
+        timeLeft -= dt;
+        if (timeLeft <= 0) {
+            timeLeft = 0;
+            updateTimerUI();
+            endGame(false);
+            return;
+        }
+        updateTimerUI();
+
+        // ==================== ВВОД ====================
+        const forwardDown  = !!(keys["w"] || keys["arrowup"]    || keys["ц"]);
+        const backwardDown = !!(keys["s"] || keys["arrowdown"]  || keys["ы"]);
+        const leftDown     = !!(keys["a"] || keys["arrowleft"]  || keys["ф"]);
+        const rightDown    = !!(keys["d"] || keys["arrowright"] || keys["в"]);
+
+        const turningCamera = keys["q"] || keys["й"] || keys["e"] || keys["у"];
+
+        if (stick._pendingStop === null) {
+            if (stick.forward.active && backwardDown && !stick.backward.wasDown) {
+                stick._pendingStop = 'forward';
+                stick.backward.holdTime = 0;
+                stick._frozenCamAngle = cameraOrbit.targetAngle;
+            } else if (stick.backward.active && forwardDown && !stick.forward.wasDown) {
+                stick._pendingStop = 'backward';
+                stick.forward.holdTime = 0;
+                stick._frozenCamAngle = cameraOrbit.targetAngle;
+            }
+        }
+
+        if (stick._pendingStop === 'forward') {
+            if (backwardDown) {
+                stick.backward.holdTime += dt;
+                if (stick.backward.holdTime >= TAP_THRESHOLD) {
+                    resetStick(stick.forward);
+                    stick.backward.active = true;
+                    stick.backward.running = false;
+                    stick.backward.holdTime = 0;
+                    stick.backward.wasDown = true;
+                    stick._pendingStop = null;
+                    stick._frozenCamAngle = null;
+                }
+            } else {
+                resetStick(stick.forward);
+                resetStick(stick.backward);
+                if (stick._frozenCamAngle !== null) {
+                    cameraOrbit.targetAngle = stick._frozenCamAngle;
+                    player.restCamAngle     = stick._frozenCamAngle;
+                }
+                stick._pendingStop = null;
+                stick._frozenCamAngle = null;
+            }
+        } else if (stick._pendingStop === 'backward') {
+            if (forwardDown) {
+                stick.forward.holdTime += dt;
+                if (stick.forward.holdTime >= TAP_THRESHOLD) {
+                    resetStick(stick.backward);
+                    stick.forward.active = true;
+                    stick.forward.running = false;
+                    stick.forward.holdTime = 0;
+                    stick.forward.wasDown = true;
+                    stick._pendingStop = null;
+                    stick._frozenCamAngle = null;
+                }
+            } else {
+                resetStick(stick.forward);
+                resetStick(stick.backward);
+                if (stick._frozenCamAngle !== null) {
+                    cameraOrbit.targetAngle = stick._frozenCamAngle;
+                    player.restCamAngle     = stick._frozenCamAngle;
+                }
+                stick._pendingStop = null;
+                stick._frozenCamAngle = null;
+            }
+        }
+
+        updateStickState(stick.forward, forwardDown, dt);
+        updateStickState(stick.backward, backwardDown, dt);
+
+        let moveDir = 0;
+        if (stick._pendingStop === null) {
+            if (stick.forward.active) moveDir = 1;
+            else if (stick.backward.active) moveDir = -1;
+        }
+
+        if (stick._pendingStop === null &&
+            !stick.forward.active && !stick.backward.active) {
+            if (forwardDown && !backwardDown) moveDir = 1;
+            else if (backwardDown && !forwardDown) moveDir = -1;
+        }
+
+        // ==================== ЭНЕРГИЯ ====================
+        const wantRun = (stick.forward.active && stick.forward.running) ||
+                        (stick.backward.active && stick.backward.running);
+        const canRun = runEnergy > 0;
+        const actuallyRunning = wantRun && canRun;
+
+        if (actuallyRunning) {
+            runEnergy -= dt;
+            if (runEnergy <= 0) {
+                runEnergy = 0;
+                isTired = true;
+                stick.forward.running = false;
+                stick.backward.running = false;
+            }
+        } else if (isTired) {
+            runEnergy += dt;
+            if (runEnergy >= RECOVER_TIME) {
+                runEnergy = MAX_RUN_TIME;
+                isTired = false;
+            }
+        } else {
+            if (runEnergy < MAX_RUN_TIME) {
+                runEnergy = Math.min(MAX_RUN_TIME, runEnergy + dt * 0.5);
+            }
+        }
+
+        // ==================== ПРЫЖОК ====================
+        const airborne = !player.grounded && player.y > JUMP_CLEAR_Y;
+
+        if (!player.grounded) {
+            player.vy -= GRAVITY * dt;
+            player.y += player.vy * dt;
+            if (player.y <= 0) {
+                player.y = 0;
+                player.vy = 0;
+                player.grounded = true;
+                if (!isWalkable(player.x, player.z, false)) {
+                    const angles = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+                    for (const a of angles) {
+                        const tx = player.x + Math.sin(a) * 2.5;
+                        const tz = player.z + Math.cos(a) * 2.5;
+                        if (isWalkable(tx, tz, false)) {
+                            player.x = tx;
+                            player.z = tz;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==================== ПОВОРОТ ====================
+        const turnInput = (leftDown ? 1 : 0) - (rightDown ? 1 : 0);
+        const moving = moveDir !== 0;
+
+        if (keys["q"] || keys["й"]) {
+            cameraOrbit.angle += dt * CAMERA_MANUAL_SPEED;
+            cameraOrbit.targetAngle = cameraOrbit.angle;
+        }
+        if (keys["e"] || keys["у"]) {
+            cameraOrbit.angle -= dt * CAMERA_MANUAL_SPEED;
+            cameraOrbit.targetAngle = cameraOrbit.angle;
+        }
+
+        if (turnInput !== 0) {
+            const turnSpeed = moving ? PLAYER_TURN_SPEED : PLAYER_TURN_SPEED * 0.75;
+            player.angle += turnInput * dt * turnSpeed * PLAYER_TURN_MULT;
+            player.angle = normalizeAngle(player.angle);
+
+            if (!moving) {
+                player.restCamAngle = player.angle + Math.PI;
+            }
+        }
+
+        // ==================== ДВИЖЕНИЕ ====================
+        if (moving) {
+            const moveAngle = player.angle + (moveDir > 0 ? 0 : Math.PI);
+            const wx = Math.sin(moveAngle);
+            const wz = Math.cos(moveAngle);
+
+            const speedMult = actuallyRunning ? player.runMultiplier : 1;
+            const step = player.speed * speedMult * dt;
+
+            const newX = player.x + wx * step;
+            const newZ = player.z + wz * step;
+
+            if (isWalkable(newX, player.z, airborne)) player.x = newX;
+            if (isWalkable(player.x, newZ, airborne)) player.z = newZ;
+
+            const animRate = actuallyRunning ? 16 : 11;
+            player.walkPhase += dt * animRate;
+            player.moving = true;
+            player.stepping = player.grounded;
+        } else {
+            player.walkPhase *= 0.9;
+            player.moving = false;
+            player.stepping = false;
+        }
+
+        // ==================== КАМЕРА ====================
+        if (stick._pendingStop === null && !turningCamera) {
+            if (moving) {
+                const moveAngle = player.angle + (moveDir > 0 ? 0 : Math.PI);
+                cameraOrbit.targetAngle = moveAngle + Math.PI;
+                player.restCamAngle = cameraOrbit.targetAngle;
+            } else {
+                cameraOrbit.targetAngle = player.restCamAngle;
+            }
+        }
+
+        {
+            const camDiff = angleDelta(cameraOrbit.targetAngle, cameraOrbit.angle);
+            cameraOrbit.angle += camDiff * Math.min(1, dt * CAMERA_FOLLOW_SPEED);
+        }
+
+        pokemonRoot.position.x = player.x;
+        pokemonRoot.position.y = player.y;
+        pokemonRoot.position.z = player.z;
+        pokemonRoot.rotation.y = player.angle;
+
+        const shadowScale = player.grounded ? 1 : Math.max(0.35, 1 - player.y * 0.15);
+        shadowMesh.scale.setScalar(shadowScale);
+
+        const energyFull = !isTired && runEnergy >= MAX_RUN_TIME;
+        const showEnergyRing = actuallyRunning || !energyFull;
+        energyGroup.visible = showEnergyRing;
+        oldGlowMesh.visible = !showEnergyRing;
+
+        if (oldGlowMesh.visible) {
+            const autoWalking = stick.forward.active || stick.backward.active;
+            const wantGeo = autoWalking ? oldGlowGeoNarrow : oldGlowGeoWide;
+            if (oldGlowMesh.geometry !== wantGeo) {
+                oldGlowMesh.geometry = wantGeo;
+            }
+        }
+
+        if (showEnergyRing) {
+            const energyFrac = isTired
+                ? (runEnergy / RECOVER_TIME)
+                : (runEnergy / MAX_RUN_TIME);
+
+            const redCount = Math.round((1 - energyFrac) * ENERGY_SEGMENTS);
+            const tiredPulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.006);
+
+            for (let i = 0; i < ENERGY_SEGMENTS; i++) {
+                const seg = energySegments[i];
+                const isRed = i < redCount;
+                if (isTired) {
+                    const baseCol = isRed ? 0xff5a3a : 0x6bffb8;
+                    seg.material.color.setHex(baseCol);
+                    seg.material.opacity = 0.4 + 0.5 * tiredPulse;
+                } else {
+                    seg.material.color.setHex(isRed ? 0xff5a3a : 0x6bffb8);
+                    seg.material.opacity = 0.85;
+                }
+            }
+        }
+
+        const phase = player.walkPhase;
+        const s = Math.sin(phase);
+        const bounce = player.stepping ? Math.abs(s) * (actuallyRunning ? 0.07 : 0.05) : 0;
+        pokemonLift.position.y = 79 * S + bounce;
+
+        const legAmp = actuallyRunning ? 0.14 : 0.1;
+        const legSwing = player.stepping ? s : 0;
+        legBackGroup.position.z  =  legSwing * legAmp;
+        legBackGroup.position.y  = (100 - 172) * S + Math.max(0, legSwing) * 0.04;
+        legFrontGroup.position.z = -legSwing * legAmp;
+        legFrontGroup.position.y = (100 - 172) * S + Math.max(0, -legSwing) * 0.04;
+
+        if (!player.grounded) {
+            legBackGroup.position.y  = (100 - 172) * S + 0.06;
+            legFrontGroup.position.y = (100 - 172) * S + 0.06;
+        }
+
+        earLeftGroup.rotation.z  =  Math.sin(phase * 0.8) * 0.12;
+        earRightGroup.rotation.z = -Math.sin(phase * 0.8) * 0.12;
+        tailGroup.rotation.y = Math.sin(phase * 0.9) * 0.25;
+        tailGroup.rotation.x = Math.sin(phase * 1.3) * 0.10;
+
+        let headTurnTarget = 0;
+
+        if (moving && moveDir === -1) {
+            if (turnInput !== 0) {
+                headTurnTarget = turnInput * (HEAD_TURN_BACK_TURNING_DEG * Math.PI / 180);
+            } else {
+                headTurnTarget = HEAD_TURN_BACK_STRAIGHT_DEG * Math.PI / 180;
+            }
+        }
+
+        if (moving && moveDir === 1 && turnInput !== 0) {
+            headTurnTarget += turnInput * (HEAD_TURN_FORWARD_DEG * Math.PI / 180);
+        }
+
+        headGroup.rotation.y += (headTurnTarget - headGroup.rotation.y) * Math.min(1, dt * 6);
+        headGroup.rotation.z = Math.sin(phase * 0.5) * 0.04;
+
+        const camX = player.x + Math.sin(cameraOrbit.angle) * cameraOrbit.distance;
+        const camZ = player.z + Math.cos(cameraOrbit.angle) * cameraOrbit.distance;
+        camera.position.set(camX, cameraOrbit.height + player.y * 0.35, camZ);
+        camera.lookAt(player.x, 1.0 + player.y, player.z);
+
+        stars.rotation.y += dt * 0.006;
+
+        // === Обновляем NPC и миникарту ===
+        updateNpcs(dt);
+        checkCatch();
+        drawMinimap();
+
+        // Сохраняем позицию игрока для playerApproaching
+        player._prevX = player.x;
+        player._prevZ = player.z;
+    }
+
+    function loop(now) {
+        const dt = Math.min((now - lastTime) / 1000, 0.05);
+        lastTime = now;
+        if (gameActive) {
+            update(dt);
+        }
+        renderer.render(scene, camera);
+        requestAnimationFrame(loop);
+    }
+
+    window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    updateTimerUI();
+    document.getElementById("loading").classList.add("hide");
+    requestAnimationFrame(loop);
+
+} catch (err) {
+    const errBox = document.getElementById("error");
+    errBox.style.display = "flex";
+    errBox.textContent = "Ошибка:\n\n" + (err && err.stack ? err.stack : err);
+    console.error(err);
+}
+</script>
+
+</body>
+</html>
