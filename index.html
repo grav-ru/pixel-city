@@ -2344,6 +2344,7 @@ try {
     const player = {
         x: spawn.x, z: spawn.z, y: 0,
         angle: 0,
+        turnInputAnalog: 0,
         speed: PLAYER_REF_SPEED * 2,
         runMultiplier: 1.25,
         walkPhase: 0,
@@ -2540,7 +2541,59 @@ try {
             el.addEventListener('contextmenu', (e) => e.preventDefault());
         }
 
-        document.querySelectorAll('.dbtn, .abtn').forEach(bindKey);
+        // Bind only action buttons and vertical D-pad buttons
+        document.querySelectorAll('.abtn, .dbtn.up, .dbtn.down').forEach(bindKey);
+
+        // Analog control for the D-pad rotation
+        const dpad = document.querySelector('.dpad');
+        if (dpad) {
+            const btnL = dpad.querySelector('.dbtn.left');
+            const btnR = dpad.querySelector('.dbtn.right');
+
+            const handleMove = (e) => {
+                const rect = dpad.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const deltaX = e.clientX - centerX;
+                const maxDelta = rect.width / 2;
+                
+                let val = deltaX / maxDelta;
+                val = Math.max(-1, Math.min(1, val));
+                
+                // Deadzone for center
+                if (Math.abs(val) < 0.05) val = 0;
+                
+                player.turnInputAnalog = -val; // Right (+val) -> turnInput -1, Left (-val) -> turnInput 1
+
+                // Visual feedback
+                if (btnL) btnL.classList.toggle('pressed', val < -0.8);
+                if (btnR) btnR.classList.toggle('pressed', val > 0.8);
+            };
+
+            dpad.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dpad.setPointerCapture(e.pointerId);
+                handleMove(e);
+            });
+
+            dpad.addEventListener('pointermove', (e) => {
+                if (dpad.hasPointerCapture(e.pointerId)) {
+                    handleMove(e);
+                }
+            });
+
+            dpad.addEventListener('pointerup', (e) => {
+                player.turnInputAnalog = 0;
+                if (btnL) btnL.classList.remove('pressed');
+                if (btnR) btnR.classList.remove('pressed');
+            });
+            
+            dpad.addEventListener('pointercancel', (e) => {
+                player.turnInputAnalog = 0;
+                if (btnL) btnL.classList.remove('pressed');
+                if (btnR) btnR.classList.remove('pressed');
+            });
+        }
     })();
 
     // ==================== МИНИКАРТА ====================
@@ -2781,7 +2834,10 @@ try {
         }
 
         // ==================== ПОВОРОТ ====================
-        const turnInput = (leftDown ? 1 : 0) - (rightDown ? 1 : 0);
+        let turnInput = (leftDown ? 1 : 0) - (rightDown ? 1 : 0);
+        if (player.turnInputAnalog !== 0) {
+            turnInput = player.turnInputAnalog;
+        }
         const moving = moveDir !== 0;
 
         if (keys["q"] || keys["й"]) {
