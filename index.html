@@ -326,21 +326,16 @@
     .overlay-content { display: flex; flex-direction: column; align-items: center; gap: 20px; }
     .rotate-icon { font-size: 48px; animation: rotate 2s linear infinite; }
     @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    
-    @media (orientation: portrait) {
-        .orientation-overlay { display: flex; }
-    }
-    @media (min-width: 1024px) {
-        .orientation-overlay { display: none !important; }
-    }
+    @media (orientation: portrait) { .orientation-overlay { display: flex; } }
+    @media (min-width: 1024px) { .orientation-overlay { display: none !important; } }
 
 
-    /* CRITICAL FIX FOR RIGHT CORNER / IOS STANDALONE */
+    /* ABSOLUTE CENTERING & FULLSCREEN FIX */
     html, body {
         margin: 0 !important;
         padding: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
+        width: 100vw !important;
+        height: 100vh !important;
         overflow: hidden !important;
         position: fixed !important;
         top: 0 !important;
@@ -350,7 +345,7 @@
         background: #05070d !important;
     }
     #game {
-        position: fixed !important;
+        position: absolute !important;
         top: 0 !important;
         left: 0 !important;
         width: 100% !important;
@@ -366,6 +361,9 @@
         height: 100% !important;
         outline: none !important;
         -webkit-tap-highlight-color: transparent !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
     }
 
 </style>
@@ -426,32 +424,26 @@
 <script type="module">
 try {
     const THREE = await import('three');
-    // --- Viewport Helpers (Programmer's Fix) ---
     function getViewportSize() {
-        /* Fixed Listeners */
-        return {
-            w: Math.round(window.innerWidth),
-            h: Math.round(window.innerHeight)
-        };
+        if (window.visualViewport) {
+            return { w: Math.round(window.visualViewport.width), h: Math.round(window.visualViewport.height) };
+        }
+        return { w: Math.round(window.innerWidth), h: Math.round(window.innerHeight) };
     }
 
     function resizeRenderer() {
         const { w, h } = getViewportSize();
         if (w < 1 || h < 1) return;
-
         const canvas = document.getElementById("game");
         if (!canvas) return;
-        
-        canvas.style.width  = w + 'px';
+        canvas.style.width = w + 'px';
         canvas.style.height = h + 'px';
         canvas.style.position = 'fixed';
         canvas.style.top = '0';
         canvas.style.left = '0';
-
         const pr = Math.min(window.devicePixelRatio || 1, 1.5);
         renderer.setPixelRatio(pr);
         renderer.setSize(w, h, false);
-
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
     }
@@ -3105,7 +3097,6 @@ window.addEventListener('orientationchange', () => {
     setTimeout(resizeRenderer, 50);
     setTimeout(resizeRenderer, 300);
 });
-
 if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', resizeRenderer);
     window.visualViewport.addEventListener('scroll', resizeRenderer);
