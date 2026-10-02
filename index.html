@@ -191,8 +191,8 @@
     .dpad {
         position: fixed;
         right: 20px;
-        bottom: calc(20px + 5vh);
-        width: 224px;
+        bottom: calc(20px + 2vh);
+        width: 219px;
         height: 128px;
         border-radius: 64px;
         background: transparent;
@@ -231,7 +231,7 @@
     .dpad .dbtn.right { width: 58px; height: 58px; margin-right: 4px; font-size: 24px; border-radius: 33% 50% 50% 33%; }
     .dbtn.up,
     .dbtn.down {
-        width: 40px; height: 36px; font-size: 16px;
+        width: 58px; height: 58px; font-size: 16px;
     }
     .dbtn.up   { border-radius: 50% 50% 30% 30%; }
     .dbtn.down { border-radius: 30% 30% 50% 50%; }
@@ -1288,9 +1288,9 @@ try {
 // ИЗМЕНЕНИЯ: защита от undefined, ограничение частоты пересчёта,
 // нормализация индексов, запрет на частый computeSafeSpots.
 
-    const SENSE_RADIUS = CELL * 2.5;
+    const SENSE_RADIUS = CELL * 2.0;
     const SIGHT_RANGE  = CELL * 6;
-    const PANIC_RADIUS = CELL * 1.5;
+    const PANIC_RADIUS = CELL * 2.5;
     const HARD_FORBID_RADIUS = CELL * 3.0;
     const DOT_FORBID = 0.15;
 
