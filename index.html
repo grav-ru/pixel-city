@@ -843,7 +843,7 @@ try {
     // ==================== ИГРОВОЙ ПЕРСОНАЖ (МОДЕЛЬ) ====================
     const S = 0.014;
     const PLAYER_COLLISION_RADIUS = 80 * S * 0.55;
-    const PLAYER_REF_SPEED = 8.0;
+    const PLAYER_REF_SPEED = 6.0;
     const matBody = new THREE.MeshStandardMaterial({ color: 0x6bffb8, roughness: 0.85, metalness: 0.05 });
     const matBodyLight = new THREE.MeshStandardMaterial({ color: 0xa0ffd0, roughness: 0.85 });
     const matEye = new THREE.MeshBasicMaterial({ color: 0x0a1a12 });
@@ -1598,7 +1598,7 @@ try {
             angle: 0,
             desiredAngle: 0,
             walkPhase: 0,
-            baseSpeed: PLAYER_REF_SPEED * def.speedMult * (0.95 + Math.random() * 0.1),
+            baseSpeed: PLAYER_REF_SPEED * 2 * def.speedMult * (0.95 + Math.random() * 0.1),
 
             // состояния
             state: 'wander',
