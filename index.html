@@ -2820,6 +2820,14 @@ try {
             else if (backwardDown && !forwardDown) moveDir = -1;
         }
 
+        // Мгновенный разворот при смене направления движения, чтобы не было «заноса»
+        if (moveDir === -1 && player.lastMoveDir !== -1) {
+            player.angle = cameraOrbit.angle; // Лицом к камере
+        } else if (moveDir === 1 && player.lastMoveDir !== 1) {
+            player.angle = cameraOrbit.angle + Math.PI; // Задом к камере
+        }
+        player.lastMoveDir = moveDir;
+
         // ==================== ЭНЕРГИЯ ====================
         const wantRun = (stick.forward.active && stick.forward.running) ||
                         (stick.backward.active && stick.backward.running);
@@ -2889,17 +2897,25 @@ try {
 
         if (turnInput !== 0) {
             const turnSpeed = moving ? PLAYER_TURN_SPEED : PLAYER_TURN_SPEED * 0.75;
-            player.angle += turnInput * dt * turnSpeed * PLAYER_TURN_MULT;
-            player.angle = normalizeAngle(player.angle);
+            // Реверсируем поворот, если идем назад, чтобы управление было интуитивным относительно камеры
+            const effectiveTurn = (moveDir === -1) ? -turnInput : turnInput;
+            player.angle += effectiveTurn * dt * turnSpeed * PLAYER_TURN_MULT;
+        } else if (moving && moveDir !== 0) {
+            // Авто-разворот: вперёд -> от камеры, назад -> к камере
+            const targetAngle = (moveDir > 0) ? cameraOrbit.angle + Math.PI : cameraOrbit.angle;
+            const diff = angleDelta(targetAngle, player.angle);
+            // Ослабляем силу авто-разворота, чтобы он не перебивал ручной поворот мгновенно
+            player.angle += diff * Math.min(1, dt * PLAYER_TURN_SPEED * 0.3);
+        }
+        player.angle = normalizeAngle(player.angle);
 
-            if (!moving) {
-                player.restCamAngle = player.angle + Math.PI;
-            }
+        if (turnInput !== 0 && !moving) {
+            player.restCamAngle = player.angle + Math.PI;
         }
 
         // ==================== ДВИЖЕНИЕ ====================
         if (moving) {
-            const moveAngle = player.angle + (moveDir > 0 ? 0 : Math.PI);
+            const moveAngle = player.angle;
             const wx = Math.sin(moveAngle);
             const wz = Math.cos(moveAngle);
 
@@ -2926,6 +2942,7 @@ try {
         if (stick._pendingStop === null && !turningCamera) {
             if (moving) {
                 const moveAngle = player.angle + (moveDir > 0 ? 0 : Math.PI);
+                // Камера всегда следует за направлением движения (остается сзади), независимо от того, вперед или назад идет персонаж
                 cameraOrbit.targetAngle = moveAngle + Math.PI;
                 player.restCamAngle = cameraOrbit.targetAngle;
             } else {
