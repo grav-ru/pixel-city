@@ -351,6 +351,18 @@
         padding: 0;
     }
 
+
+    /* DISABLE SYSTEM CONTEXT MENU & TEXT SELECTION */
+    * {
+        -webkit-touch-callout: none !important; /* Disables iOS long-press menu */
+        -webkit-user-select: none !important;   /* Disables text selection in Safari/Chrome */
+        user-select: none !important;           /* Standard way to disable selection */
+    }
+    input, textarea {
+        -webkit-user-select: text !important;
+        user-select: text !important;
+    }
+
 </style>
 </head>
 <body>
