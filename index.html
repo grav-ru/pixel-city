@@ -255,42 +255,14 @@
 
 
     
-    #game {
-        position: fixed !important;
-        inset: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        z-index: 1 !important;
-        display: block !important;
-    }
-    canvas {
-        display: block !important;
-        width: 100% !important;
-        height: 100% !important;
-        outline: none !important;
-    }
+    
+    
 
 
     /* FORCE OVERRIDE FOR IOS STANDALONE */
     
-    #game {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        display: block !important;
-        z-index: 1 !important;
-    }
-    canvas {
-        display: block !important;
-        width: 100% !important;
-        height: 100% !important;
-        outline: none !important;
-        -webkit-tap-highlight-color: transparent !important;
-    }
+    
+    
 
 
     .orientation-overlay {
@@ -308,33 +280,25 @@
     @media (min-width: 1024px) { .orientation-overlay { display: none !important; } }
 
 
-    
-
-    
-
-
     html, body {
-        margin: 0 !important;
-        padding: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        overflow: hidden !important;
-        position: fixed !important;
-        inset: 0 !important;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        position: fixed;
+        inset: 0;
         touch-action: none;
-        background: #05070d !important;
+        background: #05070d;
     }
-    #game, canvas#game {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        display: block !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        outline: none;
-        -webkit-tap-highlight-color: transparent;
+
+    #game {
+        position: fixed;
+        top: 0;
+        left: 0;
+        display: block;
+        margin: 0;
+        padding: 0;
     }
 
 </style>
@@ -395,44 +359,60 @@
 <script type="module">
 try {
     const THREE = await import('three');
-    let lastW = 0, lastH = 0;
+    let lastCssW = 0;
+    let lastCssH = 0;
 
     function getViewportSize() {
-        if (window.visualViewport) {
-            return {
-                w: Math.round(window.visualViewport.width),
-                h: Math.round(window.visualViewport.height)
-            };
-        }
-        return {
-            w: Math.round(window.innerWidth),
-            h: Math.round(window.innerHeight)
-        };
+        const vv = window.visualViewport;
+        const w = Math.max(
+            Math.round(window.innerWidth || 0),
+            Math.round(document.documentElement.clientWidth || 0),
+            vv ? Math.round(vv.width) : 0
+        );
+        const h = Math.max(
+            Math.round(window.innerHeight || 0),
+            Math.round(document.documentElement.clientHeight || 0),
+            vv ? Math.round(vv.height) : 0
+        );
+        return { w: Math.max(1, w), h: Math.max(1, h) };
     }
 
-    function resizeRenderer() {
+    function resizeRenderer(force) {
         const { w, h } = getViewportSize();
-        if (w < 1 || h < 1) return;
-        if (w === lastW && h === lastH) return;
-
-        lastW = w;
-        lastH = h;
-
-        const pr = Math.min(window.devicePixelRatio || 1, 2);
-        renderer.setPixelRatio(pr);
-        renderer.setSize(w, h, false);
+        if (!force && w === lastCssW && h === lastCssH) return;
+        lastCssW = w;
+        lastCssH = h;
 
         const canvas = renderer.domElement;
-        canvas.style.width = w + 'px';
-        canvas.style.height = h + 'px';
+        const pr = Math.min(window.devicePixelRatio || 1, 2);
+
         canvas.style.position = 'fixed';
         canvas.style.top = '0';
         canvas.style.left = '0';
+        canvas.style.right = 'auto';
+        canvas.style.bottom = 'auto';
         canvas.style.margin = '0';
         canvas.style.padding = '0';
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+
+        renderer.setPixelRatio(pr);
+        renderer.setSize(w, h, false);
 
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
+
+        canvas.style.transform = 'translateZ(0)';
+        void canvas.offsetWidth;
+        canvas.style.transform = '';
+    }
+
+    function scheduleResize() {
+        resizeRenderer(true);
+        setTimeout(() => resizeRenderer(true), 50);
+        setTimeout(() => resizeRenderer(true), 150);
+        setTimeout(() => resizeRenderer(true), 350);
+        setTimeout(() => resizeRenderer(true), 600);
     }
 
 
@@ -447,7 +427,7 @@ try {
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
-    resizeRenderer();
+    resizeRenderer(true);
     renderer.setClearColor(0x05070d, 1);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -3078,16 +3058,12 @@ try {
         }
         renderer.render(scene, camera);
         
-window.addEventListener('resize', resizeRenderer);
-window.addEventListener('orientationchange', () => {
-    setTimeout(resizeRenderer, 50);
-    setTimeout(resizeRenderer, 250);
-    setTimeout(resizeRenderer, 500);
-});
+window.addEventListener('resize', scheduleResize);
+window.addEventListener('orientationchange', scheduleResize);
 
 if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', resizeRenderer);
-    window.visualViewport.addEventListener('scroll', resizeRenderer);
+    window.visualViewport.addEventListener('resize', scheduleResize);
+    window.visualViewport.addEventListener('scroll', scheduleResize);
 }
 
 requestAnimationFrame(loop);
