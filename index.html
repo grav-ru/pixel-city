@@ -327,6 +327,7 @@
     .rotate-icon { font-size: 48px; animation: rotate 2s linear infinite; }
     @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     @media (orientation: portrait) { .orientation-overlay { display: flex; } }
+    @media (orientation: landscape) { .orientation-overlay { display: none !important; } }
     @media (min-width: 1024px) { .orientation-overlay { display: none !important; } }
 
 
@@ -408,103 +409,83 @@
 <script type="module">
 try {
     const THREE = await import('three');
-    let lastCssW = 0, lastCssH = 0;
-    let orientDirty = false;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-    function resetIOSViewport() {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true;
+
+    function isLandscape() {
+        return window.matchMedia('(orientation: landscape)').matches ||
+            window.innerWidth > window.innerHeight;
+    }
+
+    let lastOrientation = isLandscape() ? 'landscape' : 'portrait';
+
+    function hardLandscapeFix() {
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
         document.body.scrollTop = 0;
 
-        if (window.visualViewport) {
-            requestAnimationFrame(() => {
-                window.scrollTo(0, 0);
-            });
-        }
+        const w = Math.max(window.innerWidth, document.documentElement.clientWidth, 1);
+        const h = Math.max(window.innerHeight, document.documentElement.clientHeight, 1);
 
-        const w = Math.max(window.innerWidth, document.documentElement.clientWidth);
-        const h = Math.max(window.innerHeight, document.documentElement.clientHeight);
         document.documentElement.style.width = w + 'px';
         document.documentElement.style.height = h + 'px';
         document.body.style.width = w + 'px';
         document.body.style.height = h + 'px';
-    }
 
-    function getViewportSize() {
-        const vv = window.visualViewport;
-        const scaled = vv && Math.abs(vv.scale - 1) > 0.01;
-
-        let w, h;
-        if (vv && !scaled) {
-            w = Math.round(vv.width);
-            h = Math.round(vv.height);
-        } else {
-            w = Math.round(window.innerWidth || document.documentElement.clientWidth);
-            h = Math.round(window.innerHeight || document.documentElement.clientHeight);
-        }
-
-        w = Math.max(w, Math.round(document.documentElement.clientWidth || 0));
-        h = Math.max(h, Math.round(document.documentElement.clientHeight || 0));
-
-        return { w: Math.max(1, w), h: Math.max(1, h) };
-    }
-
-    function resizeRenderer(force) {
-        resetIOSViewport();
-
-        const { w, h } = getViewportSize();
         const canvas = renderer.domElement;
-
-        const clientMismatch =
-            Math.abs(canvas.clientWidth - w) > 1 ||
-            Math.abs(canvas.clientHeight - h) > 1;
-
-        if (!force && !clientMismatch && w === lastCssW && h === lastCssH) return;
-
-        lastCssW = w;
-        lastCssH = h;
-
         const pr = Math.min(window.devicePixelRatio || 1, 2);
 
         canvas.style.position = 'fixed';
         canvas.style.top = '0px';
         canvas.style.left = '0px';
-        canvas.style.right = 'auto';
-        canvas.style.bottom = 'auto';
-        canvas.style.margin = '0';
-        canvas.style.padding = '0';
         canvas.style.width = w + 'px';
         canvas.style.height = h + 'px';
-        canvas.style.maxWidth = 'none';
-        canvas.style.maxHeight = 'none';
 
         renderer.setPixelRatio(pr);
         renderer.setSize(w, h, false);
-
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
 
-        canvas.style.transform = 'translateZ(0)';
         void canvas.offsetWidth;
-        canvas.style.transform = '';
     }
 
-    function scheduleResize() {
-        orientDirty = true;
-        const times = [0, 50, 100, 200, 350, 500, 800, 1200];
-        times.forEach(t => setTimeout(() => resizeRenderer(true), t));
-    }
+    function orientationPipeline() {
+        const now = isLandscape() ? 'landscape' : 'portrait';
 
-    function onTouchAfterOrient() {
-        if (!orientDirty) return;
-        resizeRenderer(true);
-        setTimeout(() => {
-            const { w, h } = getViewportSize();
-            const c = renderer.domElement;
-            if (Math.abs(c.clientWidth - w) <= 1 && Math.abs(c.clientHeight - h) <= 1) {
-                orientDirty = false;
+        if (now === 'landscape') {
+            hardLandscapeFix();
+            [50, 150, 300, 500].forEach(t => setTimeout(hardLandscapeFix, t));
+
+            if (isIOS && isStandalone) {
+                setTimeout(() => {
+                    const c = renderer.domElement;
+                    const okW = Math.abs(c.clientWidth - window.innerWidth) <= 2;
+                    const okH = Math.abs(c.clientHeight - window.innerHeight) <= 2;
+                    const bufRatio = c.width / Math.max(1, c.height);
+                    const cssRatio = c.clientWidth / Math.max(1, c.clientHeight);
+                    const broken = !okW || !okH || Math.abs(bufRatio - cssRatio) > 0.15;
+
+                    if (broken && !sessionStorage.getItem('ios_orient_reloaded')) {
+                        sessionStorage.setItem('ios_orient_reloaded', '1');
+                        location.reload();
+                    } else {
+                        sessionStorage.removeItem('ios_orient_reloaded');
+                    }
+                }, 600);
             }
-        }, 100);
+        }
+        lastOrientation = now;
+    }
+
+    async function tryLockLandscape() {
+        try {
+            if (screen.orientation && screen.orientation.lock) {
+                await screen.orientation.lock('landscape');
+            }
+        } catch (e) {}
     }
 
 
@@ -519,7 +500,7 @@ try {
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
-    resizeRenderer(true);
+    if (isLandscape()) hardLandscapeFix();
     renderer.setClearColor(0x05070d, 1);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -3130,20 +3111,8 @@ try {
         player._prevZ = player.z;
     }
 
-    function loop(now) {
-    // iOS Sanity Check
-    const c = renderer.domElement;
-    const { w, h } = getViewportSize();
-    if (
-        orientDirty ||
-        Math.abs(c.clientWidth - w) > 2 ||
-        Math.abs(c.clientHeight - h) > 2 ||
-        (window.visualViewport && Math.abs(window.visualViewport.scale - 1) > 0.01)
-    ) {
-        resizeRenderer(true);
-    }
-    
-    // --- iOS Standalone Brute-Force Resize Sync ---
+    function loop(now) {    if (isLandscape()) {
+        // --- iOS Standalone Brute-Force Resize Sync ---
     const currentW = window.innerWidth;
     const currentH = window.innerHeight;
     if (renderer.domElement.width !== currentW || renderer.domElement.height !== currentH) {
@@ -3161,21 +3130,10 @@ try {
             update(dt);
         }
         renderer.render(scene, camera);
-        
-window.addEventListener('resize', scheduleResize);
-window.addEventListener('orientationchange', scheduleResize);
-window.addEventListener('touchstart', onTouchAfterOrient, { passive: true });
-window.addEventListener('touchend', onTouchAfterOrient, { passive: true });
-
-if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', scheduleResize);
-    window.visualViewport.addEventListener('scroll', () => {
-        resizeRenderer(true);
-    });
-}
-
-requestAnimationFrame(loop);
+    } else {
+        lastTime = now;
     }
+    requestAnimationFrame(loop);}
 
     
 
@@ -3211,6 +3169,16 @@ if (window.visualViewport) {
     errBox.textContent = "Ошибка:\n\n" + (err && err.stack ? err.stack : err);
     console.error(err);
 }
+
+window.addEventListener('orientationchange', orientationPipeline);
+window.addEventListener('resize', orientationPipeline);
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', orientationPipeline);
+}
+document.body.addEventListener('touchstart', () => {
+    tryLockLandscape();
+}, { once: true, passive: true });
+
 </script>
 
 </body>
