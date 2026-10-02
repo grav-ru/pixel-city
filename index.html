@@ -191,7 +191,7 @@
     .dpad {
         position: fixed;
         right: 20px;
-        bottom: 20px;
+        bottom: calc(20px + 5vh);
         width: 224px;
         height: 128px;
         border-radius: 64px;
@@ -207,7 +207,7 @@
         justify-content: space-between;
         padding: 0 8px;
     }
-    .dpad .dbtn {
+    .dbtn {
         position: relative;
         display: flex; align-items: center; justify-content: center;
         color: #b6ffe0;
@@ -221,29 +221,28 @@
         box-shadow: 0 0 14px rgba(107, 255, 184, 0.2);
         transition: background 0.1s, box-shadow 0.1s, transform 0.05s;
     }
-    .dpad .dbtn:active,
-    .dpad .dbtn.pressed {
+    .dbtn:active,
+    .dbtn.pressed {
         background: rgba(107, 255, 184, 0.45) !important;
         box-shadow: 0 0 24px rgba(107, 255, 184, 0.5);
         transform: scale(0.95);
     }
     .dpad .dbtn.left  { width: 58px; height: 58px; margin-left: 4px;  font-size: 24px; border-radius: 50% 33% 33% 50%; }
     .dpad .dbtn.right { width: 58px; height: 58px; margin-right: 4px; font-size: 24px; border-radius: 33% 50% 50% 33%; }
-    .dpad .dbtn.up,
-    .dpad .dbtn.down {
-        position: absolute;
-        left: 50%;
-        transform: translateX(-50%);
+    .dbtn.up,
+    .dbtn.down {
         width: 40px; height: 36px; font-size: 16px;
     }
-    .dpad .dbtn.up   { top: 5px;    border-radius: 50% 50% 30% 30%; }
-    .dpad .dbtn.down { bottom: 5px; border-radius: 30% 30% 50% 50%; }
+    .dbtn.up   { border-radius: 50% 50% 30% 30%; }
+    .dbtn.down { border-radius: 30% 30% 50% 50%; }
 
     .action-buttons {
         position: fixed;
         left: 20px;
-        bottom: 20px;
+        bottom: calc(20px + 5vh);
         display: flex;
+        flex-direction: column;
+        align-items: center;
         gap: 14px;
         z-index: 20;
         touch-action: none;
@@ -295,12 +294,12 @@
 
 <div class="mobile-controls">
     <div class="dpad">
-        <div class="dbtn up"    data-key="w">▲</div>
-        <div class="dbtn down"  data-key="s">▼</div>
         <div class="dbtn left"  data-key="a">◀</div>
         <div class="dbtn right" data-key="d">▶</div>
     </div>
     <div class="action-buttons">
+        <div class="dbtn up"    data-key="w">▲</div>
+        <div class="dbtn down"  data-key="s">▼</div>
         <div class="abtn jump" data-key=" ">Прыжок</div>
     </div>
 </div>
