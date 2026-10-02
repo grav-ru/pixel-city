@@ -195,10 +195,10 @@
         width: 219px;
         height: 128px;
         border-radius: 64px;
-        background: transparent;
-        border: none;
-        box-shadow: none;
-        backdrop-filter: none;
+        background: rgba(5, 10, 15, 0.4);
+        border: 1px solid rgba(107, 255, 184, 0.25);
+        box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(6px);
         z-index: 20;
         touch-action: none;
         user-select: none;
@@ -2541,58 +2541,60 @@ try {
             el.addEventListener('contextmenu', (e) => e.preventDefault());
         }
 
-        // Bind only action buttons and vertical D-pad buttons
+        // Кнопки действий и вертикальные кнопки D-pad
         document.querySelectorAll('.abtn, .dbtn.up, .dbtn.down').forEach(bindKey);
 
-        // Analog control for the D-pad rotation
+        // Аналоговый стик поворота на .dpad
         const dpad = document.querySelector('.dpad');
         if (dpad) {
             const btnL = dpad.querySelector('.dbtn.left');
             const btnR = dpad.querySelector('.dbtn.right');
+            let steerPointerId = null;
 
-            const handleMove = (e) => {
+            const handleMove = (clientX) => {
                 const rect = dpad.getBoundingClientRect();
                 const centerX = rect.left + rect.width / 2;
-                const deltaX = e.clientX - centerX;
+                const deltaX = clientX - centerX;
                 const maxDelta = rect.width / 2;
-                
+
                 let val = deltaX / maxDelta;
                 val = Math.max(-1, Math.min(1, val));
-                
-                // Deadzone for center
-                if (Math.abs(val) < 0.05) val = 0;
-                
-                player.turnInputAnalog = -val; // Right (+val) -> turnInput -1, Left (-val) -> turnInput 1
 
-                // Visual feedback
+                // Мёртвая зона в центре
+                if (Math.abs(val) < 0.05) val = 0;
+
+                // Инверсия знака: val > 0 (вправо) → turnInput = -1
+                player.turnInputAnalog = -val;
+
                 if (btnL) btnL.classList.toggle('pressed', val < -0.8);
                 if (btnR) btnR.classList.toggle('pressed', val > 0.8);
             };
 
             dpad.addEventListener('pointerdown', (e) => {
+                if (steerPointerId !== null) return;
+                steerPointerId = e.pointerId;
                 e.preventDefault();
                 e.stopPropagation();
-                dpad.setPointerCapture(e.pointerId);
-                handleMove(e);
+                try { dpad.setPointerCapture(e.pointerId); } catch (err) {}
+                handleMove(e.clientX);
             });
 
             dpad.addEventListener('pointermove', (e) => {
-                if (dpad.hasPointerCapture(e.pointerId)) {
-                    handleMove(e);
-                }
+                if (e.pointerId !== steerPointerId) return;
+                handleMove(e.clientX);
             });
 
-            dpad.addEventListener('pointerup', (e) => {
+            const endSteer = (e) => {
+                if (e.pointerId !== steerPointerId) return;
+                steerPointerId = null;
                 player.turnInputAnalog = 0;
                 if (btnL) btnL.classList.remove('pressed');
                 if (btnR) btnR.classList.remove('pressed');
-            });
-            
-            dpad.addEventListener('pointercancel', (e) => {
-                player.turnInputAnalog = 0;
-                if (btnL) btnL.classList.remove('pressed');
-                if (btnR) btnR.classList.remove('pressed');
-            });
+                try { dpad.releasePointerCapture(e.pointerId); } catch (err) {}
+            };
+
+            dpad.addEventListener('pointerup', endSteer);
+            dpad.addEventListener('pointercancel', endSteer);
         }
     })();
 
