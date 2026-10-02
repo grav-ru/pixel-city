@@ -843,7 +843,7 @@ try {
     // ==================== ИГРОВОЙ ПЕРСОНАЖ (МОДЕЛЬ) ====================
     const S = 0.014;
     const PLAYER_COLLISION_RADIUS = 80 * S * 0.55;
-    const PLAYER_REF_SPEED = 6.0;
+    const PLAYER_REF_SPEED = 8.0;
     const matBody = new THREE.MeshStandardMaterial({ color: 0x6bffb8, roughness: 0.85, metalness: 0.05 });
     const matBodyLight = new THREE.MeshStandardMaterial({ color: 0xa0ffd0, roughness: 0.85 });
     const matEye = new THREE.MeshBasicMaterial({ color: 0x0a1a12 });
@@ -2344,8 +2344,8 @@ try {
     const player = {
         x: spawn.x, z: spawn.z, y: 0,
         angle: 0,
-        speed: PLAYER_REF_SPEED,
-        runMultiplier: 1.85,
+        speed: PLAYER_REF_SPEED * 2,
+        runMultiplier: 1.25,
         walkPhase: 0,
         moving: false,
         stepping: false,
