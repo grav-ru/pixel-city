@@ -434,7 +434,10 @@ try {
 
     let lastOrientation = isLandscape() ? 'landscape' : 'portrait';
 
-    function hardLandscapeFix() {
+    
+function hardLandscapeFix() {
+    if (typeof camera === 'undefined' || typeof renderer === 'undefined') return;
+
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
         document.body.scrollTop = 0;
@@ -464,7 +467,10 @@ try {
         void canvas.offsetWidth;
     }
 
-    function orientationPipeline() {
+    
+function orientationPipeline() {
+    if (typeof camera === 'undefined' || typeof renderer === 'undefined') return;
+
         const now = isLandscape() ? 'landscape' : 'portrait';
 
         if (now === 'landscape') {
