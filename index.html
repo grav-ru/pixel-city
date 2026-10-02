@@ -22,44 +22,8 @@
 <title>Пиксель — 3D город: Охота</title>
 <style>
     * { box-sizing: border-box; }
-    html, body {
-        margin: 0 !important;
-        padding: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        overflow: hidden !important;
-        position: fixed !important;
-        left: 0 !important;
-        top: 0 !important;
-        
-        margin: 0; padding: 0;
-        width: 100%; height: 100%;
-        overflow: hidden;
-        overscroll-behavior: none;
-        position: fixed;
-        
-        
-        user-select: none;
-        -webkit-user-select: none;
-        position: fixed;
-        margin: 0; padding: 0;
-        width: 100%; height: 100%;
-        overflow: hidden;
-        background: #05070d;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    #game { 
-        display: block !important;
-        position: absolute !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        z-index: 1 !important;
-        touch-action: none !important;
-    }
+    
+    
 
     .hud-panel {
         position: fixed; top: 16px; right: 24px;
@@ -179,11 +143,7 @@
         box-shadow: 0 0 16px rgba(0,0,0,0.4);
         overflow: hidden;
     }
-    #minimap canvas {
-        display: block;
-        width: 100%;
-        height: 100%;
-    }
+    #minimap 
 
     .game-over {
         position: fixed; inset: 0;
@@ -287,7 +247,36 @@
         width: 80px; height: 80px;
         align-self: flex-end;
     }
-canvas { display: block; width: 100% !important; height: 100% !important; } 
+ 
+
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        overflow: hidden !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        touch-action: none;
+    }
+    #game {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        z-index: 1 !important;
+        display: block !important;
+    }
+    canvas {
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+    }
+
 </style>
 </head>
 <body>
@@ -2971,19 +2960,37 @@ try {
         requestAnimationFrame(loop);
     }
 
-    window.addEventListener("resize", () => {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
     
-    // Force the canvas style to be exactly the window size
-    renderer.domElement.style.width = w + 'px';
-    renderer.domElement.style.height = h + 'px';
+window.addEventListener("resize", () => {
+    const sync = () => {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        
+        // 1. Update the actual canvas element attributes
+        renderer.domElement.width = w;
+        renderer.domElement.height = h;
+        
+        // 2. Update CSS to ensure no offsets
+        renderer.domElement.style.width = w + 'px';
+        renderer.domElement.style.height = h + 'px';
+        
+        // 3. Update Three.js renderer (false = don't let Three.js touch the CSS)
+        renderer.setSize(w, h, false);
+        
+        // 4. Update Camera
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+    };
     
-    // Update the internal renderer size and camera
-    renderer.setSize(w, h);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-});;
+    // Run immediately
+    sync();
+    
+    // Run again after a short delay to catch iOS Safari's delayed layout shift
+    setTimeout(sync, 100);
+    setTimeout(sync, 300);
+    setTimeout(sync, 600);
+});
+;
 
     updateTimerUI();
     document.getElementById("loading").classList.add("hide");
