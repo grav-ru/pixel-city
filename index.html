@@ -1442,6 +1442,36 @@ try {
         return path;
     }
 
+    function pathMinDistToPlayer(path) {
+        if (!path || path.length === 0) return Infinity;
+        let minD = Infinity;
+        for (const cell of path) {
+            const w = worldFromCell(cell.cx, cell.cy);
+            const d = Math.hypot(player.x - w.x, player.z - w.z);
+            if (d < minD) minD = d;
+        }
+        return minD;
+    }
+
+    function isFleePathAcceptable(npc, path) {
+        if (!path || path.length === 0) return false;
+
+        const c = cellFromWorld(npc.x, npc.z);
+
+        // path[0] — текущая клетка (стандартный BFS), path[1] — следующий шаг
+        if (path.length > 1) {
+            const next = path[1];
+            const dk = dirFromCells(c.cx, c.cy, next.cx, next.cy);
+            if (dk && !isDirectionAllowed(npc, dk)) return false;
+        }
+
+        // Путь не должен проходить слишком близко к игроку
+        const minD = pathMinDistToPlayer(path);
+        if (minD < PANIC_RADIUS * 0.8) return false;
+
+        return true;
+    }
+
     function hasLineOfSight(ax, az, bx, bz, maxRange) {
         const range = maxRange || SIGHT_RANGE;
         const dx = bx - ax;
@@ -1488,16 +1518,26 @@ try {
     function isDirectionAllowed(npc, dirKey) {
         const dv = DIRS[dirKey];
         if (!dv) return false;
+
         const toPX = player.x - npc.x;
         const toPZ = player.z - npc.z;
-        const len = Math.hypot(toPX, toPZ) || 1;
-        const dist = len;
+        const dist = Math.hypot(toPX, toPZ) || 1;
+        const tX = toPX / dist;
+        const tZ = toPZ / dist;
+        const dot = dv.dx * tX + dv.dz * tZ;
+
+        if (npc.state === 'flee') {
+            if (dot > 0.05) return false;
+
+            const nextX = npc.x + dv.dx * CELL;
+            const nextZ = npc.z + dv.dz * CELL;
+            const nextDist = Math.hypot(player.x - nextX, player.z - nextZ);
+            if (nextDist < dist - 0.5) return false;
+
+            return true;
+        }
 
         if (dist > HARD_FORBID_RADIUS) return true;
-
-        const tX = toPX / len;
-        const tZ = toPZ / len;
-        const dot = dv.dx * tX + dv.dz * tZ;
         return dot <= DOT_FORBID;
     }
 
@@ -1671,6 +1711,10 @@ try {
             houseCooldownTimer: 0,
             lastHouseId: -1,
 
+            // emergency
+            emergencyDir: null,
+            emergencyDirTimer: 0,
+
             // hiding
             hideTimer: 0,
             enteredHouseAt: 0,
@@ -1683,6 +1727,8 @@ try {
             lastPlayerDist: Infinity,
             playerDistance: Infinity,
             playerApproaching: false,
+            approachCheckTimer: 0,
+            approachRefDist: Infinity,
 
             // таймеры
             boostTimer: 0,
@@ -1725,16 +1771,36 @@ try {
         const dz = player.z - npc.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
 
+        // Двигался ли игрок за кадр (не NPC).
+        let playerMoved = false;
         if (player._prevX !== undefined) {
-            const playerMovedX = player.x - player._prevX;
-            const playerMovedZ = player.z - player._prevZ;
-            const playerMoved = Math.hypot(playerMovedX, playerMovedZ);
-            if (playerMoved > 0.01) {
-                npc.playerApproaching = dist < npc.lastPlayerDist - 0.05;
-            } else {
+            const pm = Math.hypot(player.x - player._prevX, player.z - player._prevZ);
+            playerMoved = pm > 0.01;
+        }
+
+        // Проверяем сближение раз в 0.4 с и только если двигался игрок.
+        // Нужно существенное уменьшение дистанции (>= 1.5), иначе микро-шум
+        // на 120 Hz и повороты дают ложные срабатывания.
+        npc.approachCheckTimer -= dt;
+        if (npc.approachCheckTimer <= 0) {
+            npc.approachCheckTimer = 0.4;
+
+            if (npc.approachRefDist === Infinity) {
+                npc.approachRefDist = dist;
                 npc.playerApproaching = false;
+            } else {
+                const delta = npc.approachRefDist - dist;
+                // Приближение имеет смысл только в зоне реакции.
+                // Иначе игрок на другом конце карты «пугает» всех, к кому чуть сдвинулся.
+                const maxApproachRange = SIGHT_RANGE * npc.def.sightMult;
+                npc.playerApproaching =
+                    playerMoved &&
+                    delta > 1.5 &&
+                    dist < maxApproachRange;
+                npc.approachRefDist = dist;
             }
-        } else {
+        } else if (!playerMoved) {
+            // Игрок стоит — не держим «приближение» по инерции окна.
             npc.playerApproaching = false;
         }
 
@@ -1750,15 +1816,26 @@ try {
                                     SIGHT_RANGE * npc.def.sightMult);
         const dist = npc.playerDistance;
 
+        const reallyClose = dist < ENTER_DIST * 0.6;
+        // playerApproaching учитываем только рядом; издалека — только sees / вплотную
+        const approachThreat =
+            npc.playerApproaching && dist < ENTER_DIST * 1.5;
+
         if (!npc.isPursued) {
-            if (npc.playerApproaching || dist < ENTER_DIST || sees) {
+            if (approachThreat || reallyClose || sees) {
                 npc.isPursued = true;
                 npc.pursueTimer = 0;
             }
         } else {
-            if (dist > EXIT_DIST && !sees && !npc.playerApproaching) {
+            // Далеко и не видит — сбрасываем быстрее; «приближение» на краю карты не держит угрозу
+            const farAway = dist > EXIT_DIST;
+            const noVisual = !sees;
+            const notClosing = !npc.playerApproaching || dist > ENTER_DIST * 1.5;
+
+            if (farAway && noVisual && notClosing) {
                 npc.pursueTimer += dt;
-                if (npc.pursueTimer > 1.2) {
+                const dropTime = dist > EXIT_DIST * 1.5 ? 0.35 : 1.2;
+                if (npc.pursueTimer > dropTime) {
                     npc.isPursued = false;
                     npc.pursueTimer = 0;
                 }
@@ -1858,6 +1935,12 @@ try {
 
         npc.houseCooldownTimer = 0;
         npc.lastHouseId = h.id;
+
+        npc.playerApproaching = false;
+        npc.approachRefDist = Infinity;
+        npc.approachCheckTimer = 0;
+        npc.isPursued = false;
+        npc.pursueTimer = 0;
     }
 
     function npcExitHouse(npc) {
@@ -1890,6 +1973,16 @@ try {
 
         npc.houseCooldownTimer = 8.0;
         npc.lastHouseId = h.id;
+
+        // Иначе через 1.5 с (конец exitGraceTimer) NPC снова уйдёт в flee
+        // по старому isPursued / старой дистанции.
+        npc.isPursued = false;
+        npc.pursueTimer = 0;
+
+        npc.playerApproaching = false;
+        npc.approachRefDist = Infinity;
+        npc.approachCheckTimer = 0;
+        npc.lastPlayerDist = Infinity;
     }
 
     // ==================== HIDING ====================
@@ -2005,6 +2098,8 @@ try {
             const path = findPathBFS(c.cx, c.cy, spot.cell.cx, spot.cell.cy);
             if (!path || path.length === 0) continue;
 
+            if (!isFleePathAcceptable(npc, path)) continue;
+
             let minDistToPlayer = Infinity;
             for (const cell of path) {
                 const w = worldFromCell(cell.cx, cell.cy);
@@ -2027,6 +2122,70 @@ try {
         return best;
     }
 
+    function fleeEmergencyStep(npc, dt, speed) {
+        const c = cellFromWorld(npc.x, npc.z);
+        const toPX = player.x - npc.x;
+        const toPZ = player.z - npc.z;
+        const len = Math.hypot(toPX, toPZ) || 1;
+        const tX = toPX / len;
+        const tZ = toPZ / len;
+
+        if (npc.emergencyDir && npc.emergencyDirTimer > 0) {
+            npc.emergencyDirTimer -= dt;
+            const res = moveInDirection(npc, npc.emergencyDir, dt, speed);
+            if (res === 'blocked' || res === 'reached') {
+                npc.emergencyDir = null;
+                npc.emergencyDirTimer = 0;
+            } else {
+                return;
+            }
+        }
+
+        let bestKey = null;
+        let bestScore = -Infinity;
+
+        for (const dk of DIR_KEYS) {
+            if (!isDirectionAllowed(npc, dk)) continue;
+            const dv = DIRS[dk];
+            const nx = c.cx + dv.dx;
+            const ny = c.cy + dv.dz;
+            if (!isRoadCell(nx, ny)) continue;
+            if (isDeadEnd(nx, ny)) continue;
+            if (isDeadEndDeep(nx, ny, dk, 2)) continue;
+
+            const dot = dv.dx * tX + dv.dz * tZ;
+            const score = -dot * 10;
+            if (score > bestScore) {
+                bestScore = score;
+                bestKey = dk;
+            }
+        }
+
+        // Fallback: лучше тупик, чем стоять под игроком
+        if (!bestKey) {
+            for (const dk of DIR_KEYS) {
+                if (!isDirectionAllowed(npc, dk)) continue;
+                const dv = DIRS[dk];
+                const nx = c.cx + dv.dx;
+                const ny = c.cy + dv.dz;
+                if (!isRoadCell(nx, ny)) continue;
+
+                const dot = dv.dx * tX + dv.dz * tZ;
+                const score = -dot * 10 - (isDeadEnd(nx, ny) ? 20 : 0);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestKey = dk;
+                }
+            }
+        }
+
+        if (bestKey) {
+            npc.emergencyDir = bestKey;
+            npc.emergencyDirTimer = 0.35;
+            moveInDirection(npc, bestKey, dt, speed);
+        }
+    }
+
     function fleeStep(npc, dt, speed) {
         // 1) Если есть цель-дом — идём к двери
         if (npc.targetHouse && npc.houseCooldownTimer <= 0) {
@@ -2039,7 +2198,7 @@ try {
                 }
                 if (!npc.path || npc.pathIndex >= npc.path.length) {
                     const p = findPathBFS(c.cx, c.cy, doorCell.cx, doorCell.cy);
-                    if (p && p.length > 1) {
+                    if (p && p.length > 1 && isFleePathAcceptable(npc, p)) {
                         npc.path = p;
                         npc.pathIndex = 1;
                     } else {
@@ -2070,6 +2229,12 @@ try {
             }
         }
 
+        if (npc.playerApproaching &&
+            npc.playerDistance < HARD_FORBID_RADIUS * 1.2) {
+            if (npc.escapeRepickTimer > 0.15) npc.escapeRepickTimer = 0.15;
+            if (npc.safeSpotsTimer > 0.5) npc.safeSpotsTimer = 0.5;
+        }
+
         // 2) Нет дома — идём к safe spot
         npc.safeSpotsTimer -= dt;
         npc.escapeRepickTimer -= dt;
@@ -2097,7 +2262,7 @@ try {
 
         // Не пересчитываем слишком часто
         if (needRepick && npc.escapeRepickTimer > 0) {
-            // Ждём, пока таймер истечёт
+            fleeEmergencyStep(npc, dt, speed);
             return;
         }
 
@@ -2108,6 +2273,8 @@ try {
                 npc.escapePath = best.path;
                 npc.escapePathIndex = 1;
                 npc.escapeRepickTimer = ESCAPE_REPICK_INTERVAL;
+                npc.emergencyDir = null;
+                npc.emergencyDirTimer = 0;
                 const c = cellFromWorld(npc.x, npc.z);
                 if (best.path.length > 1) {
                     const next = best.path[1];
@@ -2160,12 +2327,11 @@ try {
         }
 
         if (!isDirectionAllowed(npc, dk)) {
-            // Направление в сторону игрока — ищем другой safe spot
             npc.escapePath = null;
             npc.escapeGoalCell = null;
             npc.escapePathIndex = 0;
-            // Не пересчитываем safe spots здесь — только по таймеру
             npc.escapeRepickTimer = ESCAPE_REPICK_INTERVAL;
+            fleeEmergencyStep(npc, dt, speed);
             return;
         }
 
@@ -2274,6 +2440,8 @@ try {
                     npc.escapeGoalCell = null;
                     npc.escapePath = null;
                     npc.escapePathIndex = 0;
+                    npc.emergencyDir = null;
+                    npc.emergencyDirTimer = 0;
                 } else {
                     fleeStep(npc, dt, speed);
                     applyVisuals(npc, dt);
