@@ -2469,6 +2469,17 @@ try {
         endSteer: null
     };
 
+    // Реестр release-функций мобильных кнопок (заполняется в setupMobile).
+    const mobileButtonReleases = [];
+
+    function resetStick(s) {
+        s.active = false;
+        s.holdTime = 0;
+        s.running = false;
+        s.releaseTimer = 0;
+        s.wasDown = false;
+    }
+
     // Полный сброс всего пользовательского ввода.
     function releaseAllInputs() {
         for (const k in keys) keys[k] = false;
@@ -2482,6 +2493,11 @@ try {
             steer.lastActivity = 0;
         }
 
+        // Сброс состояния мобильных кнопок (W/A/S/D/Прыжок).
+        for (const release of mobileButtonReleases) {
+            try { release(); } catch (err) {}
+        }
+
         resetStick(stick.forward);
         resetStick(stick.backward);
         stick._pendingStop = null;
@@ -2489,14 +2505,6 @@ try {
 
         document.querySelectorAll('.dbtn.pressed, .abtn.pressed')
             .forEach(el => el.classList.remove('pressed'));
-    }
-
-    function resetStick(s) {
-        s.active = false;
-        s.holdTime = 0;
-        s.running = false;
-        s.releaseTimer = 0;
-        s.wasDown = false;
     }
 
     window.addEventListener("keydown", (e) => {
@@ -2536,7 +2544,10 @@ try {
     });
 
     window.addEventListener("pagehide", releaseAllInputs);
-    window.addEventListener("pageshow", releaseAllInputs);
+    window.addEventListener("pageshow", (e) => {
+        // Только при возврате из bfcache, не при первой загрузке
+        if (e.persisted) releaseAllInputs();
+    });
 
     // ==================== ПРОВЕРКА КАСАНИЯ ====================
     function checkCatch() {
@@ -2605,9 +2616,13 @@ try {
             const release = (e) => {
                 if (e && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
                 if (e) { e.preventDefault(); e.stopPropagation(); }
+                const pid = activePointerId;
                 activePointerId = null;
                 el.classList.remove('pressed');
                 keys[key] = false;
+                if (pid !== null) {
+                    try { el.releasePointerCapture(pid); } catch (err) {}
+                }
             };
 
             el.addEventListener('pointerdown', press);
@@ -2615,6 +2630,8 @@ try {
             el.addEventListener('pointercancel', release);
             el.addEventListener('lostpointercapture', release);
             el.addEventListener('contextmenu', (e) => e.preventDefault());
+
+            mobileButtonReleases.push(release);
         }
 
         // Кнопки действий и вертикальные кнопки D-pad
@@ -2662,13 +2679,14 @@ try {
 
             const endSteer = (e) => {
                 if (e && e.pointerId !== undefined && e.pointerId !== steer.pointerId) return;
+                const pid = steer.pointerId;
                 steer.pointerId = null;
                 player.turnInputAnalog = 0;
                 steer.lastActivity = 0;
                 if (btnL) btnL.classList.remove('pressed');
                 if (btnR) btnR.classList.remove('pressed');
-                if (e && e.pointerId !== undefined) {
-                    try { dpad.releasePointerCapture(e.pointerId); } catch (err) {}
+                if (pid !== null) {
+                    try { dpad.releasePointerCapture(pid); } catch (err) {}
                 }
             };
 
@@ -2679,6 +2697,7 @@ try {
             dpad.addEventListener('pointercancel', endSteer);
             // КЛЮЧЕВОЕ: iOS забирает палец системным жестом — ловим это событие
             dpad.addEventListener('lostpointercapture', endSteer);
+            dpad.addEventListener('contextmenu', (e) => e.preventDefault());
         }
     })();
 
