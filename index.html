@@ -2462,6 +2462,35 @@ try {
         _frozenCamAngle: null
     };
 
+    // Состояние аналогового стика поворота (iPad/тач)
+    const steer = {
+        pointerId: null,
+        lastActivity: 0,
+        endSteer: null
+    };
+
+    // Полный сброс всего пользовательского ввода.
+    function releaseAllInputs() {
+        for (const k in keys) keys[k] = false;
+
+        player.turnInputAnalog = 0;
+
+        if (steer.endSteer) {
+            try { steer.endSteer(); } catch (err) {}
+        } else {
+            steer.pointerId = null;
+            steer.lastActivity = 0;
+        }
+
+        resetStick(stick.forward);
+        resetStick(stick.backward);
+        stick._pendingStop = null;
+        stick._frozenCamAngle = null;
+
+        document.querySelectorAll('.dbtn.pressed, .abtn.pressed')
+            .forEach(el => el.classList.remove('pressed'));
+    }
+
     function resetStick(s) {
         s.active = false;
         s.holdTime = 0;
@@ -2500,9 +2529,14 @@ try {
         keys[k] = false;
     });
 
-    window.addEventListener("blur", () => {
-        for (const k in keys) keys[k] = false;
+    window.addEventListener("blur", releaseAllInputs);
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) releaseAllInputs();
     });
+
+    window.addEventListener("pagehide", releaseAllInputs);
+    window.addEventListener("pageshow", releaseAllInputs);
 
     // ==================== ПРОВЕРКА КАСАНИЯ ====================
     function checkCatch() {
@@ -2548,10 +2582,14 @@ try {
 
         function bindKey(el) {
             const key = el.dataset.key;
+            let activePointerId = null;
 
             const press = (e) => {
+                if (activePointerId !== null) return;
+                activePointerId = e.pointerId;
                 e.preventDefault();
                 e.stopPropagation();
+                try { el.setPointerCapture(e.pointerId); } catch (err) {}
                 el.classList.add('pressed');
                 if (key === " ") {
                     if (player.grounded) {
@@ -2565,7 +2603,9 @@ try {
             };
 
             const release = (e) => {
+                if (e && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
                 if (e) { e.preventDefault(); e.stopPropagation(); }
+                activePointerId = null;
                 el.classList.remove('pressed');
                 keys[key] = false;
             };
@@ -2573,7 +2613,7 @@ try {
             el.addEventListener('pointerdown', press);
             el.addEventListener('pointerup', release);
             el.addEventListener('pointercancel', release);
-            el.addEventListener('pointerleave', release);
+            el.addEventListener('lostpointercapture', release);
             el.addEventListener('contextmenu', (e) => e.preventDefault());
         }
 
@@ -2585,7 +2625,6 @@ try {
         if (dpad) {
             const btnL = dpad.querySelector('.dbtn.left');
             const btnR = dpad.querySelector('.dbtn.right');
-            let steerPointerId = null;
 
             const handleMove = (clientX) => {
                 const rect = dpad.getBoundingClientRect();
@@ -2601,14 +2640,15 @@ try {
 
                 // Инверсия знака: val > 0 (вправо) → turnInput = -1
                 player.turnInputAnalog = -val;
+                steer.lastActivity = performance.now();
 
                 if (btnL) btnL.classList.toggle('pressed', val < -0.8);
                 if (btnR) btnR.classList.toggle('pressed', val > 0.8);
             };
 
             dpad.addEventListener('pointerdown', (e) => {
-                if (steerPointerId !== null) return;
-                steerPointerId = e.pointerId;
+                if (steer.pointerId !== null) return;
+                steer.pointerId = e.pointerId;
                 e.preventDefault();
                 e.stopPropagation();
                 try { dpad.setPointerCapture(e.pointerId); } catch (err) {}
@@ -2616,21 +2656,29 @@ try {
             });
 
             dpad.addEventListener('pointermove', (e) => {
-                if (e.pointerId !== steerPointerId) return;
+                if (e.pointerId !== steer.pointerId) return;
                 handleMove(e.clientX);
             });
 
             const endSteer = (e) => {
-                if (e.pointerId !== steerPointerId) return;
-                steerPointerId = null;
+                if (e && e.pointerId !== undefined && e.pointerId !== steer.pointerId) return;
+                steer.pointerId = null;
                 player.turnInputAnalog = 0;
+                steer.lastActivity = 0;
                 if (btnL) btnL.classList.remove('pressed');
                 if (btnR) btnR.classList.remove('pressed');
-                try { dpad.releasePointerCapture(e.pointerId); } catch (err) {}
+                if (e && e.pointerId !== undefined) {
+                    try { dpad.releasePointerCapture(e.pointerId); } catch (err) {}
+                }
             };
+
+            // Сохраняем endSteer в steer, чтобы вызывать из releaseAllInputs()
+            steer.endSteer = endSteer;
 
             dpad.addEventListener('pointerup', endSteer);
             dpad.addEventListener('pointercancel', endSteer);
+            // КЛЮЧЕВОЕ: iOS забирает палец системным жестом — ловим это событие
+            dpad.addEventListener('lostpointercapture', endSteer);
         }
     })();
 
@@ -2880,8 +2928,17 @@ try {
         }
 
         // ==================== ПОВОРОТ ====================
+        // Страховка: если аналоговый ввод «залип» без активного пальца — сбрасываем
+        if (player.turnInputAnalog !== 0 &&
+            steer.pointerId === null &&
+            steer.lastActivity > 0 &&
+            performance.now() - steer.lastActivity > 2000) {
+            player.turnInputAnalog = 0;
+            steer.lastActivity = 0;
+        }
+
         let turnInput = (leftDown ? 1 : 0) - (rightDown ? 1 : 0);
-        if (player.turnInputAnalog !== 0) {
+        if (Math.abs(player.turnInputAnalog) > 0.08) {
             turnInput = player.turnInputAnalog;
         }
         const moving = moveDir !== 0;
@@ -2900,11 +2957,12 @@ try {
             // Реверсируем поворот, если идем назад, чтобы управление было интуитивным относительно камеры
             const effectiveTurn = (moveDir === -1) ? -turnInput : turnInput;
             player.angle += effectiveTurn * dt * turnSpeed * PLAYER_TURN_MULT;
-        } else if (moving && moveDir !== 0) {
-            // Авто-разворот: вперёд -> от камеры, назад -> к камере
+        } else if (moving && moveDir !== 0 && turnInput === 0) {
+            // Авто-разворот: вперёд -> от камеры, назад -> к камере.
+            // Не работает, когда есть ручной/аналоговый ввод — иначе
+            // возникает положительная обратная связь и камера «раскручивается».
             const targetAngle = (moveDir > 0) ? cameraOrbit.angle + Math.PI : cameraOrbit.angle;
             const diff = angleDelta(targetAngle, player.angle);
-            // Ослабляем силу авто-разворота, чтобы он не перебивал ручной поворот мгновенно
             player.angle += diff * Math.min(1, dt * PLAYER_TURN_SPEED * 0.3);
         }
         player.angle = normalizeAngle(player.angle);
