@@ -265,6 +265,19 @@
     }
     .dpad .dbtn.left  { width: 58px; height: 58px; margin-left: 4px;  font-size: 24px; border-radius: 50% 33% 33% 50%; }
     .dpad .dbtn.right { width: 58px; height: 58px; margin-right: 4px; font-size: 24px; border-radius: 33% 50% 50% 33%; }
+    .dpad .dbtn.center-up {
+        position: absolute;
+        top: -74px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 58px;
+        height: 58px;
+        font-size: 11px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        font-weight: 600;
+        border-radius: 50%;
+    }
     .dbtn.up,
     .dbtn.down {
         width: 58px; height: 58px; font-size: 16px;
@@ -274,8 +287,8 @@
 
     .action-buttons {
         position: fixed;
-        left: 20px;
-        bottom: calc(20px + 5vh);
+        left: calc(20px + 5vw);
+        bottom: calc(20px + 2vh);
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -332,11 +345,11 @@
     <div class="dpad">
         <div class="dbtn left"  data-key="a">◀</div>
         <div class="dbtn right" data-key="d">▶</div>
+        <div class="dbtn center-up" data-key=" ">JUMP</div>
     </div>
     <div class="action-buttons">
         <div class="dbtn up"    data-key="w">▲</div>
         <div class="dbtn down"  data-key="s">▼</div>
-        <div class="abtn jump" data-key=" ">Прыжок</div>
     </div>
 </div>
 
@@ -2635,7 +2648,7 @@ try {
         }
 
         // Кнопки действий и вертикальные кнопки D-pad
-        document.querySelectorAll('.abtn, .dbtn.up, .dbtn.down').forEach(bindKey);
+        document.querySelectorAll('.dbtn.up, .dbtn.down, .dbtn.center-up').forEach(bindKey);
 
         // Аналоговый стик поворота на .dpad
         const dpad = document.querySelector('.dpad');
