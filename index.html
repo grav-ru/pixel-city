@@ -254,7 +254,7 @@
         border: 1.5px solid rgba(107, 255, 184, 0.55);
         border-radius: 50%;
         box-shadow: 0 0 14px rgba(107, 255, 184, 0.2);
-        transition: background 0.1s, box-shadow 0.1s, transform 0.05s;
+        transition: background 0.25s ease, box-shadow 0.25s ease, transform 0.05s;
         z-index: 2;
     }
     .dbtn:active,
@@ -262,6 +262,16 @@
         background: rgba(107, 255, 184, 0.45) !important;
         box-shadow: 0 0 24px rgba(107, 255, 184, 0.5);
         transform: scale(0.95);
+    }
+
+    /* Автобег (залипание): мягкая зелёная подсветка изнутри */
+    .dbtn.sticky-on {
+        background: rgba(107, 255, 184, 0.22) !important;
+        box-shadow:
+            inset 0 0 12px rgba(107, 255, 184, 0.75),
+            inset 0 0 22px rgba(107, 255, 184, 0.35),
+            0 0 14px rgba(107, 255, 184, 0.35);
+        color: #e8fff4;
     }
     .dpad .dbtn.left  { width: 58px; height: 58px; margin-left: 4px;  font-size: 24px; border-radius: 50% 33% 33% 50%; }
     .dpad .dbtn.right { width: 58px; height: 58px; margin-right: 4px; font-size: 24px; border-radius: 33% 50% 50% 33%; }
@@ -2592,6 +2602,20 @@ try {
     const HEAD_TURN_BACK_STRAIGHT_DEG = 9;
     const HEAD_TURN_BACK_TURNING_DEG  = 27;
 
+    // Долгий бег «на камеру» → камера за спину
+    let backwardRunTime = 0;
+    let cameraSnapBoost = 0;
+    // После flip игнорируем зажатый «назад», пока клавишу не отпустят
+    let ignoreBackwardUntilRelease = false;
+    let lockMoveAngle = null;
+    let lockMoveAngleTimer = 0;
+    let backwardStartAngle = 0;
+
+    const BACKWARD_FLIP_TIME = 5.0;
+    const CAMERA_SNAP_TIME = 0.6;
+    const CAMERA_SNAP_MULT = 6;   // быстрее, чтобы успеть доехать за время lock
+    const LOCK_MOVE_ANGLE_TIME = 0.8;
+
     const zoomSlider = document.getElementById("zoomSlider");
     let zoomLevel = 0.5;
 
@@ -2661,6 +2685,19 @@ try {
         s.wasDown = false;
     }
 
+    // Кэш DOM-кнопок движения для подсветки автобега
+    let btnForwardEl = null;
+    let btnBackwardEl = null;
+
+    function syncStickyHighlight() {
+        if (btnForwardEl) {
+            btnForwardEl.classList.toggle('sticky-on', stick.forward.active);
+        }
+        if (btnBackwardEl) {
+            btnBackwardEl.classList.toggle('sticky-on', stick.backward.active);
+        }
+    }
+
     // Полный сброс всего пользовательского ввода.
     function releaseAllInputs() {
         for (const k in keys) keys[k] = false;
@@ -2684,8 +2721,18 @@ try {
         stick._pendingStop = null;
         stick._frozenCamAngle = null;
 
+        backwardRunTime = 0;
+        cameraSnapBoost = 0;
+        ignoreBackwardUntilRelease = false;
+        lockMoveAngle = null;
+        lockMoveAngleTimer = 0;
+
         document.querySelectorAll('.dbtn.pressed, .abtn.pressed')
             .forEach(el => el.classList.remove('pressed'));
+
+        // Снимаем подсветку автобега — залипание сброшено
+        if (btnForwardEl)  btnForwardEl.classList.remove('sticky-on');
+        if (btnBackwardEl) btnBackwardEl.classList.remove('sticky-on');
     }
 
     window.addEventListener("keydown", (e) => {
@@ -2817,6 +2864,9 @@ try {
 
         // Кнопки действий и вертикальные кнопки D-pad
         document.querySelectorAll('.dbtn.up, .dbtn.down, .dbtn.center-up').forEach(bindKey);
+        // Запоминаем кнопки движения для подсветки автобега
+        btnForwardEl  = document.querySelector('.dbtn.up');
+        btnBackwardEl = document.querySelector('.dbtn.down');
 
         // Аналоговый стик поворота на .dpad
         const dpad = document.querySelector('.dpad');
@@ -2988,10 +3038,20 @@ try {
         updateTimerUI();
 
         // ==================== ВВОД ====================
-        const forwardDown  = !!(keys["w"] || keys["arrowup"]    || keys["ц"]);
-        const backwardDown = !!(keys["s"] || keys["arrowdown"]  || keys["ы"]);
+        const rawForward  = !!(keys["w"] || keys["arrowup"]    || keys["ц"]);
+        const rawBackward = !!(keys["s"] || keys["arrowdown"]  || keys["ы"]);
         const leftDown     = !!(keys["a"] || keys["arrowleft"]  || keys["ф"]);
         const rightDown    = !!(keys["d"] || keys["arrowright"] || keys["в"]);
+
+        // Пока не отпустили старый «назад» после flip — не считаем его нажатием
+        if (ignoreBackwardUntilRelease) {
+            if (!rawBackward) {
+                ignoreBackwardUntilRelease = false;
+            }
+        }
+
+        const forwardDown  = rawForward;
+        const backwardDown = ignoreBackwardUntilRelease ? false : rawBackward;
 
         const turningCamera = keys["q"] || keys["й"] || keys["e"] || keys["у"];
 
@@ -3068,11 +3128,21 @@ try {
             else if (backwardDown && !forwardDown) moveDir = -1;
         }
 
-        // Мгновенный разворот при смене направления движения, чтобы не было «заноса»
-        if (moveDir === -1 && player.lastMoveDir !== -1) {
-            player.angle = cameraOrbit.angle; // Лицом к камере
-        } else if (moveDir === 1 && player.lastMoveDir !== 1) {
-            player.angle = cameraOrbit.angle + Math.PI; // Задом к камере
+        // Автобег: подсветка кнопок движения
+        syncStickyHighlight();
+
+        if (moveDir === -1) {
+            backwardRunTime += dt;
+        } else {
+            backwardRunTime = 0;
+        }
+
+        if (lockMoveAngleTimer <= 0) {
+            if (moveDir === -1 && player.lastMoveDir !== -1) {
+                player.angle = cameraOrbit.angle;
+            } else if (moveDir === 1 && player.lastMoveDir !== 1) {
+                player.angle = cameraOrbit.angle + Math.PI;
+            }
         }
         player.lastMoveDir = moveDir;
 
@@ -3157,11 +3227,48 @@ try {
             // Реверсируем поворот, если идем назад, чтобы управление было интуитивным относительно камеры
             const effectiveTurn = (moveDir === -1) ? -turnInput : turnInput;
             player.angle += effectiveTurn * dt * turnSpeed * PLAYER_TURN_MULT;
-        } else if (moving && moveDir !== 0 && turnInput === 0) {
-            // Авто-разворот: вперёд -> от камеры, назад -> к камере.
-            // Не работает, когда есть ручной/аналоговый ввод — иначе
-            // возникает положительная обратная связь и камера «раскручивается».
-            const targetAngle = (moveDir > 0) ? cameraOrbit.angle + Math.PI : cameraOrbit.angle;
+        }
+
+        // Насколько камера «доехала» до цели (радианы)
+        const camAlignmentError = Math.abs(
+            angleDelta(cameraOrbit.angle, cameraOrbit.targetAngle)
+        );
+
+        if (lockMoveAngleTimer > 0 || (lockMoveAngle !== null && camAlignmentError > 0.05)) {
+            if (turnInput !== 0) {
+                // Игрок сам рулит — снимаем фиксацию курса
+                lockMoveAngle = null;
+                lockMoveAngleTimer = 0;
+            } else {
+                lockMoveAngleTimer -= dt;
+
+                // Снимаем lock только когда:
+                //  - таймер истёк, И
+                //  - камера почти доехала до цели (осталось < ~3°)
+                if (lockMoveAngleTimer <= 0 && camAlignmentError < 0.05) {
+                    lockMoveAngle = null;
+                    lockMoveAngleTimer = 0;
+                } else if (lockMoveAngleTimer < -2.0) {
+                    // Защита от залипания: если камера не доехала за 2 с — снимаем принудительно
+                    lockMoveAngle = null;
+                    lockMoveAngleTimer = 0;
+                }
+
+                if (lockMoveAngle !== null) {
+                    player.angle = lockMoveAngle;
+                }
+            }
+        } else if (
+            moving &&
+            moveDir === 1 &&
+            turnInput === 0 &&
+            lockMoveAngleTimer <= 0 &&
+            camAlignmentError < 0.05
+        ) {
+            // Только при беге ВПЕРЁД подтягиваем спиной к камере.
+            // И только когда камера уже доехала — иначе за время follow
+            // player.angle тянется к «промежуточной» камере и уезжает в сторону.
+            const targetAngle = cameraOrbit.angle + Math.PI;
             const diff = angleDelta(targetAngle, player.angle);
             player.angle += diff * Math.min(1, dt * PLAYER_TURN_SPEED * 0.3);
         }
@@ -3208,9 +3315,47 @@ try {
             }
         }
 
+        // --- Долгий бег назад: камера за спину, курс сохраняется ---
+        if (moveDir === -1 && backwardRunTime >= BACKWARD_FLIP_TIME) {
+            // Текущий курс бега — без доворота к устаревшему углу
+            const face = player.angle;
+            const behind = normalizeAngle(face + Math.PI);
+
+            // Только цель: камера плавно за спину (~0.3 с)
+            cameraOrbit.targetAngle = behind;
+            player.restCamAngle = behind;
+            // cameraOrbit.angle НЕ трогаем
+
+            const wasRunning = stick.backward.running || stick.forward.running;
+            resetStick(stick.backward);
+            resetStick(stick.forward);
+            stick.forward.active = true;
+            stick.forward.running = wasRunning;
+            stick.forward.holdTime = HOLD_TO_STICK;
+            stick.forward.wasDown = true;
+            stick._pendingStop = null;
+            stick._frozenCamAngle = null;
+
+            ignoreBackwardUntilRelease = true;
+
+            player.angle = face;
+            player.lastMoveDir = 1;
+            lockMoveAngle = face;
+            lockMoveAngleTimer = LOCK_MOVE_ANGLE_TIME;
+
+            cameraSnapBoost = CAMERA_SNAP_TIME;
+            backwardRunTime = 0;
+        }
+
         {
+            if (cameraSnapBoost > 0) {
+                cameraSnapBoost = Math.max(0, cameraSnapBoost - dt);
+            }
+            const followSpd = cameraSnapBoost > 0
+                ? CAMERA_FOLLOW_SPEED * CAMERA_SNAP_MULT
+                : CAMERA_FOLLOW_SPEED;
             const camDiff = angleDelta(cameraOrbit.targetAngle, cameraOrbit.angle);
-            cameraOrbit.angle += camDiff * Math.min(1, dt * CAMERA_FOLLOW_SPEED);
+            cameraOrbit.angle += camDiff * Math.min(1, dt * followSpd);
         }
 
         pokemonRoot.position.x = player.x;
